@@ -1,13 +1,13 @@
 import yt_dlp
 import os
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_format_string(url: str, quality: int) -> str:
     if 'youtube.com' in url or 'youtu.be' in url:
-        if 'shorts' in url:
-            return f'bestvideo[height<={quality}][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={quality}][vcodec^=avc]+bestaudio'
-        else:
-            return f'bestvideo[height<={quality}][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={quality}][vcodec^=avc]+bestaudio'
+        return f'bestvideo[height<={quality}][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={quality}][vcodec^=avc]+bestaudio'
     else:
         return f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
 
@@ -36,5 +36,5 @@ def download_video(url: str, quality: int = 1080) -> tuple:
         file_name, width, height = _download()
         return file_name, width, height
     except Exception as e:
-        print("DOWNLOAD ERROR:", e)
+        logger.error(f"Download error: {e}")
         raise
