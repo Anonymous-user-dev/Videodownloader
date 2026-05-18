@@ -6,12 +6,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 def get_format_string(url: str, quality: int) -> str:
+    """Checks if it's youtube or tiktok, instagram url"""
     if 'youtube.com' in url or 'youtu.be' in url:
         return f'bestvideo[height<={quality}][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={quality}][vcodec^=avc]+bestaudio'
     else:
         return f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
 
-def download_video(url: str, quality: int = 1080) -> tuple:
+def download_video(url: str, quality: int = 1080):
+    """Downloads video"""
     os.makedirs("downloads", exist_ok=True)
 
     options = {

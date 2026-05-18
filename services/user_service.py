@@ -1,8 +1,9 @@
 
 from sqlalchemy import select
 from model import User, Download
-from schemas.user import UserCreate
+
 async def get_or_create_user(telegram_user_id, username, db):
+    """Gets user from database if user already exists, if not, it registers user in DB"""
     result = await db.execute(select(User).where(User.telegram_user_id == telegram_user_id))
     user = result.scalars().first()
 
@@ -18,6 +19,7 @@ async def get_or_create_user(telegram_user_id, username, db):
     return user
 
 async def save_download(user_id, link, db):
+    """Saves download records to DB"""
     download_ob = Download(
         user_id=user_id,
         link=link,
