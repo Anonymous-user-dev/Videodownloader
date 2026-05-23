@@ -20,9 +20,9 @@ def download_video(url: str, quality: int = 1080):
         'format': get_format_string(url, quality),
         'outtmpl': f'downloads/{uuid.uuid4()}.%(ext)s',
         'merge_output_format': 'mp4',
-        'postprocessor_args': {
-            'ffmpegmerger': ['-movflags', '+faststart'],
-        },
+        "quiet": True,
+        "no_warnings": True,
+        "retries": 5,
     }
 
     def _download():

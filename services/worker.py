@@ -27,7 +27,7 @@ def send_message_sync(chat_id):
     )
 
 
-@app.task
+@app.task(rate_limit='3/m')
 def video_procedure(url, chat_id, quality=1080):
     file_path, width, height = download_video(url, quality)
     if os.path.getsize(file_path) > 45 * 1024 * 1024:

@@ -1,5 +1,6 @@
-import redis
+import redis as redis
+from config import settings
 
-pool = redis.ConnectionPool(host='localhost', port=6379, decode_responses=True, max_connections=10)
+pool = redis.ConnectionPool(host=settings.REDIS_HOST, port=settings.REDIS_PORT, decode_responses=True, max_connections=10)
 
 redis_client = redis.Redis(connection_pool=pool)
