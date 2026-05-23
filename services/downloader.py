@@ -1,6 +1,7 @@
 import yt_dlp
 import os
 import uuid
+import subprocess
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,8 @@ def get_format_string(url: str, quality: int) -> str:
 
 def download_video(url: str, quality: int = 1080):
     """Downloads video"""
+    cmd = ["yt-dlp", url]
+    subprocess.run(cmd,check=True)
     os.makedirs("downloads", exist_ok=True)
 
     options = {
@@ -40,4 +43,5 @@ def download_video(url: str, quality: int = 1080):
         return file_name, width, height
     except Exception as e:
         logger.error(f"Download error: {e}")
+
         raise

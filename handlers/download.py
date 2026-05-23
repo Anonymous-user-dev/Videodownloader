@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes
 from dependencies.redis import redis_client
 from services.video_info import get_video_info
 from services.worker import video_procedure
+
 import logging
 from services.downloads_slots import acquire_slot
 from services.rate_limit import check_rate_limit
@@ -24,7 +25,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"Rate limited. Retry in {retry_after}s")
         return
 
-    slot = await acquire_slot(user_id)
+    slot = acquire_slot(user_id)
     if not slot:
         await update.message.reply_text("Too many active downloads. Wait for current ones to finish")
         return
@@ -36,7 +37,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
     if pending_url and url in ["720p", "480p", "1080p"]:
         quality = int(url.replace("p", ""))
         redis_client.delete(f"pending_quality:{chat_id}")
-        video_procedure.delay(pending_url, chat_id, quality)
+        video_procedure.delay(pending_url, chat_id, user_id, quality)
         await update.message.reply_text("Downloading in lower quality...")
         return
 
@@ -58,7 +59,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await save_download(user_id=user.id, link=url, db=db)
     logger.info(f"Sending task to Celery: {url}")
     video_procedure.delay(url, chat_id, user_id)
-    await update.message.reply_text("Downloading video...")
+    await update.message.reply_text("Task queued. Downloading...")
 
 
 

@@ -1,33 +1,25 @@
-from dependencies.redis import redis_client
+from dependencies.redis_sync import redis_client
 
-MAX_ACTIVE = 2
+MAX_ACTIVE = 3
 EXPIRE = 1800
 
 
-async def acquire_slot(user_id: int) -> bool:
+def acquire_slot(user_id: int) -> bool:
     key = f"active_downloads:{user_id}"
 
-    async with redis_client.pipeline() as pipe:
-        while True:
-            try:
-                await pipe.watch(key)
+    current = redis_client.incr(key)
 
-                current = await redis_client.get(key)
-                current = int(current) if current else 0
+    # set expiry only on first slot
+    if current == 1:
+        redis_client.expire(key, EXPIRE)
 
-                if current >= MAX_ACTIVE:
-                    await pipe.unwatch()
-                    return False
+    if current > MAX_ACTIVE:
+        redis_client.decr(key)
+        return False
 
-                pipe.multi()
-                pipe.incr(key)
-                pipe.expire(key, EXPIRE)
+    return True
 
-                await pipe.execute()
-                return True
 
-            except Exception:
-                continue
 def release_slot(user_id: int):
     key = f"active_downloads:{user_id}"
 

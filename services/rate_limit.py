@@ -6,29 +6,14 @@ from redis.exceptions import WatchError
 
 from dependencies.redis import redis_client
 
-# =========================
-# REDIS
-# =========================
-
-
-# =========================
-# CONFIG
-# =========================
 
 CAPACITY = 5
-# max burst requests
 
 REFILL_RATE = 1 / 20
-# 1 token every 20 sec
 
 EXPIRE_TIME = 3600
 
 MAX_RETRIES = 5
-
-# =========================
-# TOKEN BUCKET
-# =========================
-
 
 async def check_rate_limit(user_id: int):
     key = f"ratelimit:{user_id}"
@@ -38,15 +23,7 @@ async def check_rate_limit(user_id: int):
         try:
             async with redis_client.pipeline() as pipe:
 
-                # =========================
-                # WATCH KEY
-                # =========================
-
                 await pipe.watch(key)
-
-                # =========================
-                # GET DATA
-                # =========================
 
                 data = await pipe.hmget(key,["tokens", "last_refill"])
 
@@ -55,7 +32,6 @@ async def check_rate_limit(user_id: int):
                 tokens = data[0]
                 last_refill = data[1]
 
-                # first request
                 if tokens is None:
                     tokens = CAPACITY
                     last_refill = now
@@ -63,10 +39,6 @@ async def check_rate_limit(user_id: int):
                 else:
                     tokens = float(tokens)
                     last_refill = float(last_refill)
-
-                # =========================
-                # REFILL TOKENS
-                # =========================
 
                 elapsed = now - last_refill
 
@@ -77,10 +49,6 @@ async def check_rate_limit(user_id: int):
                     tokens + refill
                 )
 
-                # =========================
-                # BLOCK REQUEST
-                # =========================
-
                 if tokens < 1:
 
                     retry_after = int(
@@ -90,13 +58,7 @@ async def check_rate_limit(user_id: int):
                     await pipe.reset()
 
                     return False, retry_after
-
-                # consume token
                 tokens -= 1
-
-                # =========================
-                # TRANSACTION
-                # =========================
 
                 pipe.multi()
 
@@ -118,9 +80,8 @@ async def check_rate_limit(user_id: int):
                 return True, 0
 
         except WatchError:
-            # another request modified key
-            # retry transaction
+            #retry
             continue
 
-    # fallback protection
+    # fallback
     return False, 5

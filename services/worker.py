@@ -7,7 +7,6 @@ import logging
 from config import settings
 from services.downloader import download_video
 from services.downloads_slots import release_slot
-from dependencies.redis import redis_client
 logger = logging.getLogger(__name__)
 app = Celery('tasks', broker=settings.RABBITMQ_HOST)
 
@@ -54,16 +53,11 @@ def video_procedure(url, chat_id, user_id, quality=1080):
         logger.error(f"Worker error: {e}")
 
     finally:
-        # cleanup
+
         if file_path and os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except:
                 pass
 
-        # IMPORTANT: release slot using correct user_id
-        try:
-            release_slot(user_id)
-        except Exception as e:
-            logger.error(f"Release slot error: {e}")
-        logger.info(f"Worked end: {user_id}")
+        release_slot(user_id)
