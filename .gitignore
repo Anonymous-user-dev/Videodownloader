@@ -10,4 +10,4 @@ __pycache__/
 .downloads/
 downloads/
 downloads
-app.logs/
+app.logs

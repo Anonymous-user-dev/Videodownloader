@@ -10,6 +10,9 @@ class Settings(BaseSettings):
 
     RABBITMQ_HOST: str
 
+    LIMIT: int = 5
+    WINDOW_SEC: int = 60
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra='ignore'

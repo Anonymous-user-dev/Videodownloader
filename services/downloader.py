@@ -23,6 +23,7 @@ def download_video(url: str, quality: int = 1080):
         "quiet": True,
         "no_warnings": True,
         "retries": 5,
+        "socket_timeout": 30
     }
 
     def _download():
