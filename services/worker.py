@@ -1,12 +1,12 @@
 from celery import Celery
 import os
 import requests
-import asyncio
+from dependencies.redis_sync import redis_client
 import logging
 
 from config import settings
 from services.downloader import download_video
-from services.downloads_slots import release_slot
+# from services.downloads_slots import release_slot
 logger = logging.getLogger(__name__)
 app = Celery('tasks', broker=settings.RABBITMQ_HOST)
 
@@ -37,6 +37,9 @@ def video_procedure(url, chat_id, user_id, quality=1080):
     logger.info(f"Worker start: {user_id}")
     file_path = None
 
+    if isinstance(url, bytes):
+        url = url.decode()
+
     try:
         file_path, width, height = download_video(url, quality)
 
@@ -53,11 +56,17 @@ def video_procedure(url, chat_id, user_id, quality=1080):
         logger.error(f"Worker error: {e}")
 
     finally:
-
-        if file_path and os.path.exists(file_path):
+        if file_path:
             try:
-                os.remove(file_path)
-            except:
-                pass
+                file_path = os.path.abspath(file_path)
 
-        release_slot(user_id)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"Deleted file: {file_path}")
+                else:
+                    logger.warning(f"File not found for deletion: {file_path}")
+
+            except Exception as e:
+                logger.error(f"Failed to delete file: {e}")
+
+        # release_slot(user_id)

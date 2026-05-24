@@ -13,20 +13,21 @@ def get_format_string(url: str, quality: int) -> str:
     else:
         return f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
 
+
 def download_video(url: str, quality: int = 1080):
     """Downloads video"""
-    cmd = ["yt-dlp", url]
-    subprocess.run(cmd,check=True)
-    os.makedirs("downloads", exist_ok=True)
-
+    DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     options = {
         'format': get_format_string(url, quality),
-        'outtmpl': f'downloads/{uuid.uuid4()}.%(ext)s',
+        'outtmpl': os.path.join(DOWNLOAD_DIR, "%(id)s.%(ext)s"),
         'merge_output_format': 'mp4',
         "quiet": True,
         "no_warnings": True,
         "retries": 5,
-        "socket_timeout": 30
+        "socket_timeout": 30,
+        "cookiefile": "cookie.txt",
+        "sleep_interval": 2,
     }
 
     def _download():

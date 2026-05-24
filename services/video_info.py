@@ -21,8 +21,4 @@ def get_video_info(url: str):
     if duration and duration > MAX_DURATION:
         raise Exception("Video too long")
 
-    size = info.get("filesize") or info.get("filesize_approx")
-    if size and size > MAX_SIZE:
-        raise Exception("Video too large")
-
     return info

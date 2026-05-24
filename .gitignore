@@ -11,3 +11,4 @@ __pycache__/
 downloads/
 downloads
 app.logs
+services/cookie.txt

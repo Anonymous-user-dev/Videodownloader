@@ -1,7 +1,6 @@
 # services/rate_limiter.py
 
 import time
-import redis.asyncio as redis
 from redis.exceptions import WatchError
 
 from dependencies.redis import redis_client
@@ -44,16 +43,11 @@ async def check_rate_limit(user_id: int):
 
                 refill = elapsed * REFILL_RATE
 
-                tokens = min(
-                    CAPACITY,
-                    tokens + refill
-                )
+                tokens = min(CAPACITY, tokens + refill)
 
                 if tokens < 1:
 
-                    retry_after = int(
-                        (1 - tokens) / REFILL_RATE
-                    )
+                    retry_after = int((1 - tokens) / REFILL_RATE)
 
                     await pipe.reset()
 
@@ -63,17 +57,13 @@ async def check_rate_limit(user_id: int):
                 pipe.multi()
 
                 await pipe.hset(
-                    key,
-                    mapping={
+                    key, mapping={
                         "tokens": tokens,
                         "last_refill": now,
                     }
                 )
 
-                await pipe.expire(
-                    key,
-                    EXPIRE_TIME
-                )
+                await pipe.expire(key, EXPIRE_TIME)
 
                 await pipe.execute()
 
