@@ -11,7 +11,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     logging.basicConfig(filename="app.logs", encoding="utf-8", level=logging.DEBUG if settings.APP_ENV == "development" else logging.INFO)
     logger.info("Started")
-    application = Application.builder().token(settings.BOT_TOKEN).read_timeout(120).write_timeout(120).build()
+    application = Application.builder().token(settings.BOT_TOKEN).read_timeout(60).write_timeout(60).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_request))
     application.run_polling(allowed_updates=Update.ALL_TYPES)
