@@ -1,5 +1,6 @@
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from model import User, Download
 import logging
 
@@ -10,7 +11,9 @@ async def get_or_create_user(telegram_user_id, username, db):
     result = await db.execute(select(User).where(User.telegram_user_id == telegram_user_id))
     user = result.scalars().first()
 
-    if not user:
+    if user:
+        return user
+    try:
         new_user = User(
             telegram_user_id=telegram_user_id,
             username=username,
@@ -19,7 +22,11 @@ async def get_or_create_user(telegram_user_id, username, db):
         await db.commit()
 
         return new_user
-    return user
+    except IntegrityError:
+        await db.rollback()
+        result = await db.execute(select(User).where(User.telegram_user_id == telegram_user_id))
+
+        return result.scalars().first()
 
 async def save_download(user_id, link, db):
     """Saves download records to DB"""
@@ -38,9 +45,7 @@ async def save_download(user_id, link, db):
 
     db.add(download_ob)
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalars().first()
-    user.service_usage += 1
+    await db.execute(update(User).where(User.id == user_id).values(service_usage=User.service_usage + 1))
 
     await db.commit()
     await db.refresh(download_ob)
