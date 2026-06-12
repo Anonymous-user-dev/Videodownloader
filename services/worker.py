@@ -1,72 +1,186 @@
+# services/worker.py
+
 from celery import Celery
 import os
 import requests
 from dependencies.redis_sync import redis_client
 import logging
+import time
 
 from config import settings
 from services.downloader import download_video
+
 # from services.downloads_slots import release_slot
 logger = logging.getLogger(__name__)
 app = Celery('tasks', broker=settings.RABBITMQ_HOST)
 
 
 def send_video_sync(chat_id, file_path, width, height):
-    with open(file_path, 'rb') as f:
-        requests.post(
-            f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendVideo",
-            data={'chat_id': chat_id, 'width': width, 'height': height},
-            files={'video': f},
-            timeout=160
-        )
-
-
-def send_message_sync(chat_id):
-    requests.post(
-        f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
-        data={
-            "chat_id": chat_id,
-            "text": "Video too large. Try 720p or 480p."
-        },
-        timeout=60
-    )
-
-
-@app.task(rate_limit='3/m')
-def video_procedure(url, chat_id, user_id, quality=1080):
-    logger.info(f"Worker start: {user_id}")
-    file_path = None
-
-    if isinstance(url, bytes):
-        url = url.decode()
-
+    """Send video to Telegram using direct API call"""
     try:
-        file_path, width, height = download_video(url, quality)
+        # Log file info
+        file_size = os.path.getsize(file_path)
+        logger.info(f"Sending video: {file_path}, Size: {file_size / (1024 * 1024):.2f}MB")
 
-        size = os.path.getsize(file_path)
+        # Open and send the file
+        with open(file_path, 'rb') as f:
+            # Prepare the files parameter correctly
+            files = {
+                'video': (os.path.basename(file_path), f, 'video/mp4')
+            }
 
-        if size > 45 * 1024 * 1024:
-            os.remove(file_path)
-            send_message_sync(chat_id)
-            return
+            # Prepare the data parameter
+            data = {
+                'chat_id': chat_id,
+                'width': width,
+                'height': height,
+                'supports_streaming': True
+            }
 
-        send_video_sync(chat_id, file_path, width, height)
+            # Make the request with timeout
+            response = requests.post(
+                f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendVideo",
+                data=data,
+                files=files,
+                timeout=160
+            )
+
+            # Check response
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('ok'):
+                    logger.info(f"Video sent successfully to chat {chat_id}")
+                else:
+                    logger.error(f"Telegram API error: {result.get('description')}")
+                    raise Exception(f"Telegram API error: {result.get('description')}")
+            else:
+                logger.error(f"HTTP error: {response.status_code}")
+                raise Exception(f"HTTP error: {response.status_code}")
 
     except Exception as e:
-        logger.error(f"Worker error: {e}")
+        logger.error(f"Failed to send video: {e}")
+        raise
+
+
+def send_message_sync(chat_id, text=None):
+    """Send text message to Telegram"""
+    try:
+        message = text or "⚠️ Video too large (over 45MB). Please try a lower quality (720p or 480p)."
+
+        response = requests.post(
+            f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            },
+            timeout=60
+        )
+
+        if response.status_code == 200:
+            logger.info(f"Message sent to chat {chat_id}")
+        else:
+            logger.error(f"Failed to send message: {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+
+
+def send_quality_options_sync(chat_id, original_url):
+    """Send quality selection options when video is too large"""
+    try:
+        # Store the URL in Redis with short expiry
+        import json
+        redis_client.setex(
+            f"pending_quality:{chat_id}",
+            300,
+            json.dumps({'url': original_url})
+        )
+
+        # Create inline keyboard markup
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "720p", "callback_data": f"quality_720_{chat_id}"},
+                    {"text": "480p", "callback_data": f"quality_480_{chat_id}"}
+                ]
+            ]
+        }
+
+        response = requests.post(
+            f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": "⚠️ Video is too large (over 45MB). Please select a lower quality:",
+                "reply_markup": keyboard
+            },
+            timeout=60
+        )
+
+        if response.status_code == 200:
+            logger.info(f"Quality options sent to chat {chat_id}")
+        else:
+            logger.error(f"Failed to send quality options: {response.text}")
+
+    except Exception as e:
+        logger.error(f"Error sending quality options: {e}")
+
+
+# services/worker.py - Update the size check
+
+@app.task(rate_limit='3/m', bind=True, max_retries=2)
+def video_procedure(self, url, chat_id, user_id, quality=1080):
+    logger.info(f"Worker start for user {user_id}, requested quality: {quality}p")
+    file_path = None
+
+    try:
+        # Download video with specified quality
+        file_path, width, height = download_video(url, quality)
+
+        if not file_path or not os.path.exists(file_path):
+            raise Exception(f"Download failed - file not found")
+
+        # Check file size after merge is complete
+        size = os.path.getsize(file_path)
+        size_mb = size / (1024 * 1024)
+        logger.info(f"Final file size: {size_mb:.2f}MB for {quality}p quality")
+
+        MAX_SIZE = 50 * 1024 * 1024  # Telegram limit is 50MB, use 50MB
+
+        if size > MAX_SIZE:
+            logger.warning(f"Video too large: {size_mb:.2f}MB > 50MB")
+
+            # Clean up the large file
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+            # Try lower quality if not already at minimum
+            if quality > 480:
+                lower_quality = 480
+                logger.info(f"Retrying with lower quality: {lower_quality}p")
+                # Retry with lower quality
+                video_procedure.delay(url, chat_id, user_id, lower_quality)
+                return
+            else:
+                # Already at lowest quality, inform user
+                send_message_sync(chat_id,
+                                  f"❌ Video is still too large ({size_mb:.1f}MB) even at 480p.\n\nTelegram allows maximum 50MB. Please try a different video.")
+                return
+
+        # Send video to user
+        logger.info(f"Sending video to chat {chat_id} (Size: {size_mb:.2f}MB)")
+        send_video_sync(chat_id, file_path, width, height)
+        logger.info(f"Video sent successfully")
+
+    except Exception as e:
+        logger.error(f"Worker error: {e}", exc_info=True)
+        send_message_sync(chat_id, f"❌ Download failed: {str(e)[:200]}")
 
     finally:
-        if file_path:
+        # Clean up file
+        if file_path and os.path.exists(file_path):
             try:
-                file_path = os.path.abspath(file_path)
-
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    logger.info(f"Deleted file: {file_path}")
-                else:
-                    logger.warning(f"File not found for deletion: {file_path}")
-
+                os.remove(file_path)
+                logger.info(f"Cleaned up: {file_path}")
             except Exception as e:
-                logger.error(f"Failed to delete file: {e}")
-
-        # release_slot(user_id)
+                logger.error(f"Cleanup error: {e}")

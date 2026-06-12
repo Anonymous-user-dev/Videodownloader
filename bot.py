@@ -1,8 +1,9 @@
 from telegram import Update
-from telegram.ext import MessageHandler, CommandHandler, Application, ContextTypes, filters
+from telegram.ext import MessageHandler, CommandHandler, Application, ContextTypes, filters, CallbackQueryHandler
 from config import settings
 import logging
-from handlers.download import handle_video_request
+from handlers.download import handle_video_request, handle_quality_callback
+
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -13,6 +14,7 @@ def main():
     logger.info("Started")
     application = Application.builder().token(settings.BOT_TOKEN).read_timeout(60).write_timeout(60).build()
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(handle_quality_callback))  # Add this handler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_request))
     application.run_polling(allowed_updates=Update.ALL_TYPES)
     logger.info("Finished")
