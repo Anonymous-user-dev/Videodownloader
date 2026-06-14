@@ -1,6 +1,6 @@
 import yt_dlp
 
-MAX_SIZE = 45 * 1024 * 1024
+
 MAX_DURATION = 30 * 60
 
 def get_video_info(url: str):

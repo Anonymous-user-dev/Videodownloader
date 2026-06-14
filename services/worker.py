@@ -18,18 +18,14 @@ app = Celery('tasks', broker=settings.RABBITMQ_HOST)
 def send_video_sync(chat_id, file_path, width, height):
     """Send video to Telegram using direct API call"""
     try:
-        # Log file info
         file_size = os.path.getsize(file_path)
         logger.info(f"Sending video: {file_path}, Size: {file_size / (1024 * 1024):.2f}MB")
 
-        # Open and send the file
         with open(file_path, 'rb') as f:
-            # Prepare the files parameter correctly
             files = {
                 'video': (os.path.basename(file_path), f, 'video/mp4')
             }
 
-            # Prepare the data parameter
             data = {
                 'chat_id': chat_id,
                 'width': width,
@@ -37,7 +33,6 @@ def send_video_sync(chat_id, file_path, width, height):
                 'supports_streaming': True
             }
 
-            # Make the request with timeout
             response = requests.post(
                 f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendVideo",
                 data=data,
@@ -45,7 +40,6 @@ def send_video_sync(chat_id, file_path, width, height):
                 timeout=160
             )
 
-            # Check response
             if response.status_code == 200:
                 result = response.json()
                 if result.get('ok'):
@@ -86,44 +80,44 @@ def send_message_sync(chat_id, text=None):
         logger.error(f"Error sending message: {e}")
 
 
-def send_quality_options_sync(chat_id, original_url):
-    """Send quality selection options when video is too large"""
-    try:
-        # Store the URL in Redis with short expiry
-        import json
-        redis_client.setex(
-            f"pending_quality:{chat_id}",
-            300,
-            json.dumps({'url': original_url})
-        )
-
-        # Create inline keyboard markup
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "720p", "callback_data": f"quality_720_{chat_id}"},
-                    {"text": "480p", "callback_data": f"quality_480_{chat_id}"}
-                ]
-            ]
-        }
-
-        response = requests.post(
-            f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": "⚠️ Video is too large (over 45MB). Please select a lower quality:",
-                "reply_markup": keyboard
-            },
-            timeout=60
-        )
-
-        if response.status_code == 200:
-            logger.info(f"Quality options sent to chat {chat_id}")
-        else:
-            logger.error(f"Failed to send quality options: {response.text}")
-
-    except Exception as e:
-        logger.error(f"Error sending quality options: {e}")
+# def send_quality_options_sync(chat_id, original_url):
+#     """Send quality selection options when video is too large"""
+#     try:
+#         # Store the URL in Redis with short expiry
+#         import json
+#         redis_client.setex(
+#             f"pending_quality:{chat_id}",
+#             300,
+#             json.dumps({'url': original_url})
+#         )
+#
+#         # Create inline keyboard markup
+#         keyboard = {
+#             "inline_keyboard": [
+#                 [
+#                     {"text": "720p", "callback_data": f"quality_720_{chat_id}"},
+#                     {"text": "480p", "callback_data": f"quality_480_{chat_id}"}
+#                 ]
+#             ]
+#         }
+#
+#         response = requests.post(
+#             f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage",
+#             json={
+#                 "chat_id": chat_id,
+#                 "text": "⚠️ Video is too large (over 45MB). Please select a lower quality:",
+#                 "reply_markup": keyboard
+#             },
+#             timeout=60
+#         )
+#
+#         if response.status_code == 200:
+#             logger.info(f"Quality options sent to chat {chat_id}")
+#         else:
+#             logger.error(f"Failed to send quality options: {response.text}")
+#
+#     except Exception as e:
+#         logger.error(f"Error sending quality options: {e}")
 
 
 # services/worker.py - Update the size check
@@ -134,13 +128,11 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
     file_path = None
 
     try:
-        # Download video with specified quality
         file_path, width, height = download_video(url, quality)
 
         if not file_path or not os.path.exists(file_path):
             raise Exception(f"Download failed - file not found")
 
-        # Check file size after merge is complete
         size = os.path.getsize(file_path)
         size_mb = size / (1024 * 1024)
         logger.info(f"Final file size: {size_mb:.2f}MB for {quality}p quality")
@@ -150,24 +142,24 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         if size > MAX_SIZE:
             logger.warning(f"Video too large: {size_mb:.2f}MB > 50MB")
 
-            # Clean up the large file
+
             if os.path.exists(file_path):
                 os.remove(file_path)
 
-            # Try lower quality if not already at minimum
+
             if quality > 480:
                 lower_quality = 480
                 logger.info(f"Retrying with lower quality: {lower_quality}p")
-                # Retry with lower quality
+
                 video_procedure.delay(url, chat_id, user_id, lower_quality)
                 return
             else:
-                # Already at lowest quality, inform user
+
                 send_message_sync(chat_id,
                                   f"❌ Video is still too large ({size_mb:.1f}MB) even at 480p.\n\nTelegram allows maximum 50MB. Please try a different video.")
                 return
 
-        # Send video to user
+
         logger.info(f"Sending video to chat {chat_id} (Size: {size_mb:.2f}MB)")
         send_video_sync(chat_id, file_path, width, height)
         logger.info(f"Video sent successfully")
@@ -177,7 +169,6 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         send_message_sync(chat_id, f"❌ Download failed: {str(e)[:200]}")
 
     finally:
-        # Clean up file
         if file_path and os.path.exists(file_path):
             try:
                 os.remove(file_path)

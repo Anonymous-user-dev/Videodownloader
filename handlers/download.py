@@ -29,14 +29,14 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"Rate limited. Retry in {retry_after}s")
         return
 
-    # First, get video info to check size
+    # get video info to check size
     try:
-        # Log that we're trying to get video info
+
         logger.info(f"Getting video info for URL: {url}")
 
         video_info = get_video_info(url)
 
-        # Log what we received
+
         logger.info(f"Video info received: {video_info.keys() if video_info else 'None'}")
 
         if not video_info:
@@ -45,16 +45,16 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
         file_size = video_info.get('filesize', 0) or video_info.get('filesize_approx', 0)
 
-        # Log the file size
+
         logger.info(f"Video file size: {file_size} bytes ({file_size / (1024 * 1024):.1f}MB)")
 
-        # TELEGRAM BOT FILE SIZE LIMIT IS 50MB
+
         MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
         if file_size > MAX_FILE_SIZE:
             logger.info(f"Video too large ({file_size / (1024 * 1024):.1f}MB), offering quality options")
 
-            # Store the URL and offer quality options
+
             quality_data = {
                 'url': url,
                 'original_size': file_size
@@ -65,14 +65,13 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
                 json.dumps(quality_data)
             )
 
-            # Calculate approximate sizes for each quality
+
             sizes = {}
             video_height = video_info.get('height', 1080)
             logger.info(f"Video height: {video_height}")
 
             for quality in [1080, 720, 480]:
                 if quality <= video_height:
-                    # Rough estimation: size * (quality/original_height)^2
                     size_ratio = (quality / video_height) ** 2
                     sizes[quality] = (file_size * size_ratio) / (1024 * 1024)
                     logger.info(f"Estimated size for {quality}p: {sizes[quality]:.1f}MB")
@@ -85,8 +84,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
             if 720 in sizes and sizes[720] < 50:
                 row.append(InlineKeyboardButton(f"720p (~{sizes[720]:.0f}MB)", callback_data=f"quality_720_{chat_id}"))
             if 1080 in sizes and sizes[1080] < 50:
-                row.append(
-                    InlineKeyboardButton(f"1080p (~{sizes[1080]:.0f}MB)", callback_data=f"quality_1080_{chat_id}"))
+                row.append(InlineKeyboardButton(f"1080p (~{sizes[1080]:.0f}MB)", callback_data=f"quality_1080_{chat_id}"))
 
             if row:
                 keyboard.append(row)
@@ -115,7 +113,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             await save_download(user_id=user.id, link=url, db=db)
 
-        # Send to Celery without quality parameter (use best quality)
+
         video_procedure.delay(url, chat_id, user_id)
         logger.info(f"Task queued for URL: {url}")
 
@@ -165,7 +163,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
         # Clean up Redis
         await redis_client.delete(pending_key)
 
-        # Save to database
+
         async with SessionLocal() as db:
             user = await get_or_create_user(
                 telegram_user_id=user_id,
@@ -174,10 +172,9 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
             )
             await save_download(user_id=user.id, link=original_url, db=db)
 
-        # Update message
+
         await query.edit_message_text(f"📥 Downloading video in {quality}p quality... Please wait.")
 
-        # Send to Celery with quality parameter
         video_procedure.delay(original_url, chat_id, user_id, quality)
         logger.info(f"Task queued with quality {quality}p for URL: {original_url}")
 

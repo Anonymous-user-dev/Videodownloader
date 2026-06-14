@@ -1,108 +1,133 @@
-# services/downloader.py
-
 import yt_dlp
 import os
 import uuid
-import subprocess
 import logging
 import time
+import requests
+from pathlib import Path
+from yt_dlp.utils import DownloadError, ExtractorError
 
 logger = logging.getLogger(__name__)
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+COOKIE_PATH = BASE_DIR / "cookies.txt"
 
-def get_format_string(url: str, quality: int) -> str:
-    """Get format string based on platform and quality"""
-    quality = int(quality)
+DOWNLOAD_DIR = Path(os.getcwd()) / "downloads"
+DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    # For YouTube
-    if 'youtube.com' in url or 'youtu.be' in url:
-        # Force merging to mp4
-        return f'bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}][ext=mp4]/best'
 
-    # For Instagram
-    elif 'instagram.com' in url:
-        return f'bestvideo[height<={quality}][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[height<={quality}][ext=mp4]/best'
+def expand_url(url: str) -> str:
+    """
+    Expands short TikTok URLs (vt.tiktok.com).
+    """
+    try:
+        if "vt.tiktok.com" in url:
+            return requests.head(url, allow_redirects=True, timeout=10).url
+    except Exception as e:
+        logger.warning(f"URL expand failed, using original: {e}")
+    return url
 
-    # For other platforms (TikTok, etc.)
+
+def build_format(url: str, quality: int) -> str:
+    if "youtube.com" in url or "youtu.be" in url:
+        return (
+            f"bestvideo[height<={quality}][ext=mp4]+bestaudio/"
+            f"best[height<={quality}][ext=mp4]/best"
+        )
+
+    if "instagram.com" in url:
+        return (
+            f"bestvideo[height<={quality}][ext=mp4][vcodec^=avc]+"
+            f"bestaudio[ext=m4a]/best[height<={quality}]/best"
+        )
+
+    return (
+        f"bestvideo[height<={quality}]+bestaudio/"
+        f"best[height<={quality}]/best/best"
+    )
+
+
+def base_options(url: str, quality: int, unique_id: str):
+    options = {
+        "outtmpl": str(DOWNLOAD_DIR / f"%(title)s_{unique_id}.%(ext)s"),
+        "merge_output_format": "mp4",
+        "quiet": False,
+        "no_warnings": False,
+        "noplaylist": True,
+        "retries": 5,
+        "fragment_retries": 5,
+        "socket_timeout": 30,
+        "concurrent_fragment_downloads": 3,
+        "postprocessor_args": ["-movflags", "+faststart"],
+        "format": build_format(url, quality),
+    }
+
+    if COOKIE_PATH.exists():
+        options["cookiefile"] = str(COOKIE_PATH)
+        logger.info("Cookies loaded")
     else:
-        return f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
+        logger.warning("Cookies file not found")
+
+    # TikTok anti-block headers
+    if "tiktok.com" in url:
+        options["http_headers"] = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0 Safari/537.36"
+            ),
+            "Referer": "https://www.tiktok.com/",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+    return options
+
 
 
 def download_video(url: str, quality: int = 1080):
-    """Downloads video with specified quality"""
-    DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-    # Generate unique filename
+    url = expand_url(url)
     unique_id = str(uuid.uuid4())[:8]
 
-    # Basic options
-    options = {
-        'format': get_format_string(url, quality),
-        'outtmpl': os.path.join(DOWNLOAD_DIR, f'%(title)s_{unique_id}.%(ext)s'),
-        'merge_output_format': 'mp4',
-        "quiet": False,
-        "no_warnings": False,
-        "retries": 5,
-        "socket_timeout": 30,
-        "ignoreerrors": False,
-        "noplaylist": True,
-        # Important: Force post-processing to wait for merge
-        'postprocessors': [{
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': 'mp4',
-        }],
-    }
+    logger.info(f"Starting download | url={url} | quality={quality}")
 
-    # Add cookiefile if it exists
-    if os.path.exists("cookie.txt"):
-        options["cookiefile"] = "cookie.txt"
+    last_error = None
 
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            logger.info(f"Downloading {quality}p quality for URL: {url}")
+    for attempt in range(1, 4):
+        try:
+            options = base_options(url, quality, unique_id)
 
-            # Download and merge
-            info = ydl.extract_info(url, download=True)
-
-            # Get the final filename after merging
-            file_name = ydl.prepare_filename(info)
-
-            # Ensure .mp4 extension
-            if not file_name.endswith('.mp4'):
-                base = os.path.splitext(file_name)[0]
-                file_name = base + '.mp4'
-
-            # Wait a moment for the file to be fully written
-            time.sleep(1)
-
-            # Verify the file exists and get its size
-            if not os.path.exists(file_name):
-                # Try to find the file in downloads directory
-                import glob
-                mp4_files = glob.glob(os.path.join(DOWNLOAD_DIR, f"*{unique_id}*.mp4"))
-                if mp4_files:
-                    file_name = mp4_files[0]
+            if "tiktok.com" in url:
+                if attempt == 1:
+                    options["format"] = f"best[height<={quality}]"
+                elif attempt == 2:
+                    options["format"] = "best"
                 else:
-                    # Get the most recent mp4 file
-                    mp4_files = glob.glob(os.path.join(DOWNLOAD_DIR, "*.mp4"))
-                    if mp4_files:
-                        file_name = max(mp4_files, key=os.path.getctime)
+                    options["format"] = "worst/best"
 
-            if not os.path.exists(file_name):
-                raise Exception(f"Downloaded file not found: {file_name}")
+            with yt_dlp.YoutubeDL(options) as ydl:
+                logger.info(f"Attempt {attempt}/3")
 
-            file_size = os.path.getsize(file_name)
-            file_size_mb = file_size / (1024 * 1024)
+                info = ydl.extract_info(url, download=True)
 
-            # Get video dimensions
-            width = info.get('width', 1280)
-            height = info.get('height', 720)
+                file_path = ydl.prepare_filename(info)
 
-            logger.info(f"Download complete: {os.path.basename(file_name)} ({file_size_mb:.2f}MB) for {quality}p")
+                if not file_path.endswith(".mp4"):
+                    file_path = os.path.splitext(file_path)[0] + ".mp4"
 
-            return file_name, width, height
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"Missing file: {file_path}")
 
-    except Exception as e:
-        logger.error(f"Download error: {e}", exc_info=True)
-        raise
+                width = info.get("width", 1280)
+                height = info.get("height", 720)
+
+                logger.info(f"Success | file={file_path}")
+
+                return file_path, width, height
+
+        except (DownloadError, ExtractorError, Exception) as e:
+            last_error = e
+            logger.warning(f"Attempt {attempt} failed: {e}")
+            time.sleep(2 * attempt)
+
+    logger.error(f"All attempts failed | url={url} | error={last_error}")
+    raise RuntimeError(f"Download failed: {url}") from last_error

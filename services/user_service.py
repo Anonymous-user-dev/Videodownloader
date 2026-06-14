@@ -46,6 +46,5 @@ async def save_download(user_id, link, db):
     db.add(download_ob)
 
     await db.execute(update(User).where(User.id == user_id).values(service_usage=User.service_usage + 1))
-
     await db.commit()
     await db.refresh(download_ob)
