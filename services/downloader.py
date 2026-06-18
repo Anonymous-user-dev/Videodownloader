@@ -39,6 +39,14 @@ def build_format(url: str, quality: int) -> str:
         )
 
 
+    if "tiktok.com" in url:
+        return (
+            f"best[ext=mp4][height<={quality}]/"
+            "best[ext=mp4]/"
+            f"worst[ext=mp4][height<={quality}]/"
+            "worst[ext=mp4]"
+        )
+
     if "instagram.com" in url:
         return (
             f"bestvideo[height<={quality}][ext=mp4][vcodec^=avc]+"
@@ -47,8 +55,8 @@ def build_format(url: str, quality: int) -> str:
 
     return (
         f"bestvideo*[height<={quality}]+bestaudio/"
-        f"best*[vcodec!=none][height<={quality}]/"
-        "best*[vcodec!=none]"
+        f"best*[height<={quality}]/"
+        "best"
     )
 
 
@@ -88,7 +96,6 @@ def base_options(url: str, quality: int, unique_id: str):
         }
 
     if "tiktok.com" in url:
-        options["impersonate"] = ImpersonateTarget.from_str("chrome")
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -128,11 +135,14 @@ def download_video(url: str, quality: int = 1080):
 
             if "tiktok.com" in url:
                 if attempt == 1:
-                    options["format"] = f"best*[vcodec!=none][height<={quality}]/best*[vcodec!=none]"
+                    options["format"] = (
+                        f"best[ext=mp4][height<={quality}]/"
+                        "best[ext=mp4]"
+                    )
                 elif attempt == 2:
-                    options["format"] = "best*[vcodec!=none]"
+                    options["format"] = "best[ext=mp4]/worst[ext=mp4]"
                 else:
-                    options["format"] = "worst*[vcodec!=none]/best*[vcodec!=none]"
+                    options["format"] = "best/worst"
 
             with yt_dlp.YoutubeDL(options) as ydl:
                 logger.info(f"Attempt {attempt}/3")
