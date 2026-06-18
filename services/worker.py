@@ -77,6 +77,40 @@ def send_video_sync(chat_id, file_path, width, height):
         raise
 
 
+def send_audio_sync(chat_id, file_path):
+    """Send audio to Telegram using direct API call"""
+    try:
+        file_size = os.path.getsize(file_path)
+        logger.info(f"Sending audio: {file_path}, Size: {file_size / (1024 * 1024):.2f}MB")
+
+        with open(file_path, 'rb') as f:
+            files = {
+                'audio': (os.path.basename(file_path), f)
+            }
+
+            response = requests.post(
+                f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendAudio",
+                data={'chat_id': chat_id},
+                files=files,
+                timeout=160
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('ok'):
+                    logger.info(f"Audio sent successfully to chat {chat_id}")
+                else:
+                    logger.error(f"Telegram API audio error: {result.get('description')}")
+                    raise Exception(f"Telegram API audio error: {result.get('description')}")
+            else:
+                logger.error(f"HTTP audio error: {response.status_code} {response.text}")
+                raise Exception(f"HTTP audio error: {response.status_code}")
+
+    except Exception as e:
+        logger.error(f"Failed to send audio: {e}")
+        raise
+
+
 def send_message_sync(chat_id, text=None):
     """Send text message to Telegram"""
     try:
@@ -148,7 +182,7 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
     file_path = None
 
     try:
-        file_path, width, height = download_video(url, quality)
+        file_path, width, height, media_type = download_video(url, quality)
 
         if not file_path or not os.path.exists(file_path):
             raise Exception(f"Download failed - file not found")
@@ -180,9 +214,14 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                 return
 
 
-        logger.info(f"Sending video to chat {chat_id} (Size: {size_mb:.2f}MB)")
-        send_video_sync(chat_id, file_path, width, height)
-        logger.info(f"Video sent successfully")
+        if media_type == "audio":
+            logger.info(f"Sending audio-only TikTok media to chat {chat_id} (Size: {size_mb:.2f}MB)")
+            send_audio_sync(chat_id, file_path)
+            logger.info("Audio sent successfully")
+        else:
+            logger.info(f"Sending video to chat {chat_id} (Size: {size_mb:.2f}MB)")
+            send_video_sync(chat_id, file_path, width, height)
+            logger.info(f"Video sent successfully")
 
     except Exception as e:
         trace = traceback.format_exc()

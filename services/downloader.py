@@ -199,6 +199,10 @@ def probe_video(file_path: str) -> tuple[bool, int, int, str | None]:
     return True, width, height, codec
 
 
+def is_audio_file(file_path: str) -> bool:
+    return Path(file_path).suffix.lower() in {".m4a", ".mp3", ".aac", ".opus", ".ogg", ".wav"}
+
+
 def download_video(url: str, quality: int = 1080):
     url = normalize_url(url)
     quality = min(int(quality), 720)
@@ -243,6 +247,9 @@ def download_video(url: str, quality: int = 1080):
 
                 has_video, probed_width, probed_height, codec = probe_video(file_path)
                 if not has_video:
+                    if is_audio_file(file_path):
+                        logger.info("Downloaded audio-only media: %s", file_path)
+                        return file_path, 0, 0, "audio"
                     raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
 
                 width = info.get("width") or probed_width
@@ -250,7 +257,7 @@ def download_video(url: str, quality: int = 1080):
 
                 logger.info(f"Success | file={file_path} | codec={codec} | size={width}x{height}")
 
-                return file_path, width, height
+                return file_path, width, height, "video"
 
         except Exception as e:
             last_error = e
