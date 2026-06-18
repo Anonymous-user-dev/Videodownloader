@@ -5,15 +5,26 @@ import logging
 import time
 import requests
 from pathlib import Path
+from config import settings
 from yt_dlp.utils import DownloadError, ExtractorError
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-COOKIE_PATH = BASE_DIR / "cookies.txt"
+DEFAULT_COOKIE_PATH = BASE_DIR / "cookies.txt"
 
 DOWNLOAD_DIR = Path(os.getcwd()) / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_cookie_path() -> str | None:
+    cookie_path = Path(settings.YTDLP_COOKIES_PATH) if settings.YTDLP_COOKIES_PATH else DEFAULT_COOKIE_PATH
+
+    if cookie_path.exists():
+        logger.info("yt-dlp cookies file found")
+        return str(cookie_path)
+
+    logger.warning("yt-dlp cookies file not found")
+    return None
 
 
 def expand_url(url: str) -> str:
@@ -62,11 +73,9 @@ def base_options(url: str, quality: int, unique_id: str):
         "format": build_format(url, quality),
     }
 
-    if COOKIE_PATH.exists():
-        options["cookiefile"] = str(COOKIE_PATH)
-        logger.info("Cookies loaded")
-    else:
-        logger.warning("Cookies file not found")
+    cookie_path = get_cookie_path()
+    if cookie_path:
+        options["cookiefile"] = cookie_path
 
     # TikTok anti-block headers
     if "tiktok.com" in url:

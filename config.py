@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     WEBHOOK_URL: str
     WEBHOOK_SECRET: str
 
+    YTDLP_COOKIES_PATH: str | None = None
+
     APP_ENV: str = "development"
 
     REDIS_HOST: str
