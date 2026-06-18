@@ -63,6 +63,9 @@ def base_options(url: str, quality: int, unique_id: str):
         "concurrent_fragment_downloads": 3,
         "postprocessor_args": ["-movflags", "+faststart"],
         "format": build_format(url, quality),
+        "js_runtimes": {
+            "node": {},
+        },
     }
 
     cookie_path = get_cookie_path(url)

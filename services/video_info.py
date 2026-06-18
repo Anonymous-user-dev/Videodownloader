@@ -24,7 +24,10 @@ def get_video_info(url: str):
         "socket_timeout": 20,
         "skip_download": True,
         "extract_flat": False,
-        "format": None
+        "format": None,
+        "js_runtimes": {
+            "node": {},
+        },
     }
 
     cookie_path = get_cookie_path(url)
