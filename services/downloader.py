@@ -18,17 +18,13 @@ DOWNLOAD_DIR = Path(os.getcwd()) / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def expand_url(url: str) -> str:
-    """
-    Expands short TikTok URLs (vt.tiktok.com).
-    """
-    try:
-        if "vt.tiktok.com" in url:
-            return requests.head(url, allow_redirects=True, timeout=10).url
-    except Exception as e:
-        logger.warning(f"URL expand failed, using original: {e}")
-    return url
+def normalize_url(url: str) -> str:
+    if "tiktok.com" in url:
+        if "www.tiktok.com" in url:
+            return url.split("?")[0]
+        return url
 
+    return url
 
 def build_format(url: str, quality: int) -> str:
     if "youtube.com" in url or "youtu.be" in url:
@@ -38,13 +34,12 @@ def build_format(url: str, quality: int) -> str:
             "best"
         )
 
-
     if "tiktok.com" in url:
         return (
-            f"best[ext=mp4][height<={quality}]/"
+            "best[format_id!=audio][ext=mp4]/"
+            "best[format_id!=audio]/"
             "best[ext=mp4]/"
-            f"worst[ext=mp4][height<={quality}]/"
-            "worst[ext=mp4]"
+            "best"
         )
 
     if "instagram.com" in url:
@@ -111,7 +106,7 @@ def base_options(url: str, quality: int, unique_id: str):
 
 
 def download_video(url: str, quality: int = 1080):
-    url = expand_url(url)
+    url = normalize_url(url)
     unique_id = str(uuid.uuid4())[:8]
 
     logger.info(f"Starting download | url={url} | quality={quality}")
@@ -135,14 +130,11 @@ def download_video(url: str, quality: int = 1080):
 
             if "tiktok.com" in url:
                 if attempt == 1:
-                    options["format"] = (
-                        f"best[ext=mp4][height<={quality}]/"
-                        "best[ext=mp4]"
-                    )
+                    options["format"] = "best[format_id!=audio][ext=mp4]/best[format_id!=audio]"
                 elif attempt == 2:
-                    options["format"] = "best[ext=mp4]/worst[ext=mp4]"
+                    options["format"] = "best[format_id!=audio]/best[ext=mp4]"
                 else:
-                    options["format"] = "best/worst"
+                    options["format"] = "best"
 
             with yt_dlp.YoutubeDL(options) as ydl:
                 logger.info(f"Attempt {attempt}/3")
