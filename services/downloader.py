@@ -68,6 +68,9 @@ def base_options(url: str, quality: int, unique_id: str):
     cookie_path = get_cookie_path()
     if cookie_path:
         options["cookiefile"] = cookie_path
+        logger.info(f"Using yt-dlp cookies from: {cookie_path}")
+    else:
+        logger.warning("No yt-dlp cookies are being used")
 
     # TikTok anti-block headers
     if "tiktok.com" in url:
