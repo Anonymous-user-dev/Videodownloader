@@ -3,6 +3,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     BOT_TOKEN: str
     DATABASE_URL: str
+
+    WEBHOOK_URL: str
+    WEBHOOK_SECRET: str
+
     APP_ENV: str = "development"
 
     REDIS_HOST: str
