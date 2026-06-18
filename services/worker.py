@@ -23,7 +23,7 @@ def send_video_sync(chat_id, file_path, width, height):
 
         with open(file_path, 'rb') as f:
             files = {
-                'video': (os.path.basename(file_path), f, 'video/mp4')
+                'video': (os.path.basename(file_path), f)
             }
 
             data = {

@@ -5,9 +5,14 @@ from config import settings
 import logging
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.DEBUG if settings.APP_ENV == "development" else logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext").setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 

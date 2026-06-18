@@ -3,9 +3,8 @@ import os
 import uuid
 import logging
 import time
-import requests
+import subprocess
 from pathlib import Path
-from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.utils import DownloadError, ExtractorError
 from services.ytdlp_cookies import get_cookie_path
 
@@ -26,18 +25,27 @@ def normalize_url(url: str) -> str:
 
     return url
 
+
+def is_youtube_url(url: str) -> bool:
+    return "youtube.com" in url or "youtu.be" in url
+
+
+def is_tiktok_url(url: str) -> bool:
+    return "tiktok.com" in url
+
+
 def build_format(url: str, quality: int) -> str:
-    if "youtube.com" in url or "youtu.be" in url:
+    if is_youtube_url(url):
         return (
             f"best[height<={quality}][ext=mp4]/"
             f"best*[height<={quality}]/"
             "best"
         )
 
-    if "tiktok.com" in url:
+    if is_tiktok_url(url):
         return (
-            "best[format_id!=audio][ext=mp4]/"
-            "best[format_id!=audio]/"
+            "best[format_id^=h264][ext=mp4]/"
+            f"best[ext=mp4][height<={quality}]/"
             "best[ext=mp4]/"
             "best"
         )
@@ -65,7 +73,7 @@ def base_options(url: str, quality: int, unique_id: str):
         "retries": 5,
         "fragment_retries": 5,
         "socket_timeout": 30,
-        "concurrent_fragment_downloads": 2,
+        "concurrent_fragment_downloads": 1,
         "postprocessor_args": ["-movflags", "+faststart"],
         "format": build_format(url, quality),
         "js_runtimes": {
@@ -80,7 +88,7 @@ def base_options(url: str, quality: int, unique_id: str):
     else:
         logger.warning("No yt-dlp cookies are being used")
 
-    if "youtube.com" in url or "youtu.be" in url:
+    if is_youtube_url(url):
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -90,7 +98,7 @@ def base_options(url: str, quality: int, unique_id: str):
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-    if "tiktok.com" in url:
+    if is_tiktok_url(url):
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -104,9 +112,64 @@ def base_options(url: str, quality: int, unique_id: str):
     return options
 
 
+def find_downloaded_file(info: dict, ydl: yt_dlp.YoutubeDL) -> str | None:
+    requested_path = ydl.prepare_filename(info)
+    base_path = os.path.splitext(requested_path)[0]
+    possible_paths = [
+        requested_path,
+        base_path + ".mp4",
+        base_path + ".webm",
+        base_path + ".mkv",
+        base_path + ".mov",
+    ]
+
+    requested_downloads = info.get("requested_downloads") or []
+    possible_paths.extend(
+        download.get("filepath")
+        for download in requested_downloads
+        if download.get("filepath")
+    )
+
+    return next((path for path in possible_paths if path and os.path.exists(path)), None)
+
+
+def probe_video(file_path: str) -> tuple[bool, int, int, str | None]:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name,width,height",
+                "-of",
+                "csv=p=0",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception as exc:
+        logger.warning("Could not run ffprobe for %s: %s", file_path, exc)
+        return True, 1280, 720, None
+
+    output = result.stdout.strip()
+    if result.returncode != 0 or not output:
+        return False, 0, 0, None
+
+    parts = output.split(",")
+    codec = parts[0] if len(parts) > 0 else None
+    width = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1280
+    height = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 720
+    return True, width, height, codec
+
 
 def download_video(url: str, quality: int = 1080):
     url = normalize_url(url)
+    quality = min(int(quality), 720)
     unique_id = str(uuid.uuid4())[:8]
 
     logger.info(f"Starting download | url={url} | quality={quality}")
@@ -117,7 +180,7 @@ def download_video(url: str, quality: int = 1080):
         try:
             options = base_options(url, quality, unique_id)
 
-            if "youtube.com" in url or "youtu.be" in url:
+            if is_youtube_url(url):
                 if attempt == 1:
                     options["format"] = (
                         f"bestvideo*[height<={quality}]+bestaudio/"
@@ -128,11 +191,11 @@ def download_video(url: str, quality: int = 1080):
                 else:
                     options["format"] = "best*"
 
-            if "tiktok.com" in url:
+            if is_tiktok_url(url):
                 if attempt == 1:
-                    options["format"] = "best[format_id!=audio][ext=mp4]/best[format_id!=audio]"
+                    options["format"] = "best[format_id^=h264][ext=mp4]/best[ext=mp4]"
                 elif attempt == 2:
-                    options["format"] = "best[format_id!=audio]/best[ext=mp4]"
+                    options["format"] = "best[ext=mp4]/best"
                 else:
                     options["format"] = "best"
 
@@ -141,27 +204,19 @@ def download_video(url: str, quality: int = 1080):
 
                 info = ydl.extract_info(url, download=True)
 
-                file_path = ydl.prepare_filename(info)
-                requested_path = ydl.prepare_filename(info)
-                base_path = os.path.splitext(requested_path)[0]
-
-                possible_paths = [
-                    requested_path,
-                    base_path + ".mp4",
-                    base_path + ".webm",
-                    base_path + ".mkv",
-                    base_path + ".mov",
-                ]
-
-                file_path = next((path for path in possible_paths if os.path.exists(path)), None)
+                file_path = find_downloaded_file(info, ydl)
 
                 if not file_path:
-                    raise FileNotFoundError(f"Missing downloaded file near: {requested_path}")
+                    raise FileNotFoundError(f"Missing downloaded file for: {url}")
 
-                width = info.get("width", 1280)
-                height = info.get("height", 720)
+                has_video, probed_width, probed_height, codec = probe_video(file_path)
+                if not has_video:
+                    raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
 
-                logger.info(f"Success | file={file_path}")
+                width = info.get("width") or probed_width
+                height = info.get("height") or probed_height
+
+                logger.info(f"Success | file={file_path} | codec={codec} | size={width}x{height}")
 
                 return file_path, width, height
 
