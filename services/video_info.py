@@ -1,6 +1,6 @@
 import logging
 import yt_dlp
-
+from yt_dlp.networking.impersonate import ImpersonateTarget
 from services.ytdlp_cookies import get_cookie_path
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def get_video_info(url: str):
         }
 
     if is_tiktok_url(url):
-        options["impersonate"] = "chrome"
+        options["impersonate"] = ImpersonateTarget.from_str("chrome")
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

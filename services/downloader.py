@@ -5,6 +5,7 @@ import logging
 import time
 import requests
 from pathlib import Path
+from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.utils import DownloadError, ExtractorError
 from services.ytdlp_cookies import get_cookie_path
 
@@ -86,7 +87,7 @@ def base_options(url: str, quality: int, unique_id: str):
         }
 
     if "tiktok.com" in url:
-        options["impersonate"] = "chrome"
+        options["impersonate"] = ImpersonateTarget.from_str("chrome")
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
