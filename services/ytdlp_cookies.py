@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DEFAULT_COOKIES_PATH = BASE_DIR / "cookies.txt"
 DEFAULT_YOUTUBE_COOKIES_PATH = BASE_DIR / "youtube_cookies.txt"
-DEFAULT_TIKTOK_COOKIES_PATH = BASE_DIR / "cookies.txt"
+DEFAULT_TIKTOK_COOKIES_PATH = BASE_DIR / "tiktok_cookies.txt"
 
 RUNTIME_DIR = Path("/tmp")
 
