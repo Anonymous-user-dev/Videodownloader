@@ -48,6 +48,7 @@ def get_video_info(url: str):
         }
 
     if is_tiktok_url(url):
+        options["impersonate"] = "chrome"
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

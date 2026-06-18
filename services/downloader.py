@@ -85,13 +85,13 @@ def base_options(url: str, quality: int, unique_id: str):
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-    # TikTok anti-block headers
     if "tiktok.com" in url:
+        options["impersonate"] = "chrome"
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0 Safari/537.36"
+                "Chrome/122.0.0.0 Safari/537.36"
             ),
             "Referer": "https://www.tiktok.com/",
             "Accept-Language": "en-US,en;q=0.9",
