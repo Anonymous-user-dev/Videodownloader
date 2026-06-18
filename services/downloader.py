@@ -81,6 +81,11 @@ def base_options(url: str, quality: int, unique_id: str):
             ),
             "Accept-Language": "en-US,en;q=0.9",
         }
+        options["extractor_args"] = {
+            "youtube": {
+                "player_client": ["mweb"],
+            }
+        }
 
     # TikTok anti-block headers
     if "tiktok.com" in url:
