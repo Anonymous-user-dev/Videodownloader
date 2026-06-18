@@ -46,8 +46,9 @@ def build_format(url: str, quality: int) -> str:
         )
 
     return (
-        f"bestvideo[height<={quality}]+bestaudio/"
-        f"best[height<={quality}]/best/best"
+        f"bestvideo*[height<={quality}]+bestaudio/"
+        f"best*[vcodec!=none][height<={quality}]/"
+        "best*[vcodec!=none]"
     )
 
 
@@ -127,11 +128,11 @@ def download_video(url: str, quality: int = 1080):
 
             if "tiktok.com" in url:
                 if attempt == 1:
-                    options["format"] = f"best[height<={quality}]"
+                    options["format"] = f"best*[vcodec!=none][height<={quality}]/best*[vcodec!=none]"
                 elif attempt == 2:
-                    options["format"] = "best"
+                    options["format"] = "best*[vcodec!=none]"
                 else:
-                    options["format"] = "worst/best"
+                    options["format"] = "worst*[vcodec!=none]/best*[vcodec!=none]"
 
             with yt_dlp.YoutubeDL(options) as ydl:
                 logger.info(f"Attempt {attempt}/3")
@@ -139,12 +140,21 @@ def download_video(url: str, quality: int = 1080):
                 info = ydl.extract_info(url, download=True)
 
                 file_path = ydl.prepare_filename(info)
+                requested_path = ydl.prepare_filename(info)
+                base_path = os.path.splitext(requested_path)[0]
 
-                if not file_path.endswith(".mp4"):
-                    file_path = os.path.splitext(file_path)[0] + ".mp4"
+                possible_paths = [
+                    requested_path,
+                    base_path + ".mp4",
+                    base_path + ".webm",
+                    base_path + ".mkv",
+                    base_path + ".mov",
+                ]
 
-                if not os.path.exists(file_path):
-                    raise FileNotFoundError(f"Missing file: {file_path}")
+                file_path = next((path for path in possible_paths if os.path.exists(path)), None)
+
+                if not file_path:
+                    raise FileNotFoundError(f"Missing downloaded file near: {requested_path}")
 
                 width = info.get("width", 1280)
                 height = info.get("height", 720)
