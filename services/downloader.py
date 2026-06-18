@@ -42,8 +42,10 @@ def expand_url(url: str) -> str:
 def build_format(url: str, quality: int) -> str:
     if "youtube.com" in url or "youtu.be" in url:
         return (
-            f"bestvideo[height<={quality}][ext=mp4]+bestaudio/"
-            f"best[height<={quality}][ext=mp4]/best"
+            f"bv*[height<={quality}][vcodec^=avc1]+ba[ext=m4a]/"
+            f"bv*[height<={quality}]+ba/"
+            f"b[height<={quality}]/"
+            "best"
         )
 
     if "instagram.com" in url:
