@@ -22,6 +22,9 @@ def get_video_info(url: str):
         "no_warnings": True,
         "noplaylist": True,
         "socket_timeout": 20,
+        "skip_download": True,
+        "extract_flat": False,
+        "format": None
     }
 
     cookie_path = get_cookie_path(url)
@@ -58,7 +61,7 @@ def get_video_info(url: str):
         }
 
     with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=False)
+        info = ydl.extract_info(url, download=False, process=False)
 
     if info.get("is_live"):
         raise Exception("Livestream not allowed")
