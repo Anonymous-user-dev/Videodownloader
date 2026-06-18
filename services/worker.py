@@ -11,6 +11,10 @@ from config import settings
 from services.downloader import download_video
 
 # from services.downloads_slots import release_slot
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 logger = logging.getLogger(__name__)
 app = Celery('tasks', broker=settings.RABBITMQ_HOST)
 
@@ -66,7 +70,6 @@ def send_message_sync(chat_id, text=None):
             json={
                 "chat_id": chat_id,
                 "text": message,
-                "parse_mode": "HTML"
             },
             timeout=60
         )
@@ -165,8 +168,11 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         logger.info(f"Video sent successfully")
 
     except Exception as e:
-        logger.error(f"Worker error: {e}", exc_info=True)
-        send_message_sync(chat_id, f"❌ Download failed: {str(e)[:200]}")
+        logger.exception("Worker error while processing %s", url)
+        failure_text = str(e)
+        if not failure_text.lower().startswith("download failed"):
+            failure_text = f"Download failed: {failure_text}"
+        send_message_sync(chat_id, f"❌ {failure_text[:600]}")
 
     finally:
         if file_path and os.path.exists(file_path):

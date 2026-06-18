@@ -1,11 +1,21 @@
 import logging
 import yt_dlp
-from yt_dlp.networking.impersonate import ImpersonateTarget
 from services.ytdlp_cookies import get_cookie_path
 
 logger = logging.getLogger(__name__)
 
 MAX_DURATION = 30 * 60
+
+
+class YtdlpLogBridge:
+    def debug(self, message):
+        logger.debug("yt-dlp: %s", message)
+
+    def warning(self, message):
+        logger.warning("yt-dlp: %s", message)
+
+    def error(self, message):
+        logger.error("yt-dlp: %s", message)
 
 
 def is_youtube_url(url: str) -> bool:
@@ -25,6 +35,7 @@ def get_video_info(url: str):
         "skip_download": True,
         "extract_flat": False,
         "format": None,
+        "logger": YtdlpLogBridge(),
         "js_runtimes": {
             "node": {},
         },
@@ -59,7 +70,7 @@ def get_video_info(url: str):
         }
 
     with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=False, process=False)
+        info = ydl.extract_info(url, download=False, process=True)
 
     if info.get("is_live"):
         raise Exception("Livestream not allowed")

@@ -5,7 +5,6 @@ import logging
 import time
 import subprocess
 from pathlib import Path
-from yt_dlp.utils import DownloadError, ExtractorError
 from services.ytdlp_cookies import get_cookie_path
 
 logger = logging.getLogger(__name__)
@@ -15,6 +14,21 @@ logger = logging.getLogger(__name__)
 
 DOWNLOAD_DIR = Path(os.getcwd()) / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class DownloadFailedError(RuntimeError):
+    pass
+
+
+class YtdlpLogBridge:
+    def debug(self, message):
+        logger.debug("yt-dlp: %s", message)
+
+    def warning(self, message):
+        logger.warning("yt-dlp: %s", message)
+
+    def error(self, message):
+        logger.error("yt-dlp: %s", message)
 
 
 def normalize_url(url: str) -> str:
@@ -76,6 +90,7 @@ def base_options(url: str, quality: int, unique_id: str):
         "concurrent_fragment_downloads": 1,
         "postprocessor_args": ["-movflags", "+faststart"],
         "format": build_format(url, quality),
+        "logger": YtdlpLogBridge(),
         "js_runtimes": {
             "node": {},
         },
@@ -220,10 +235,12 @@ def download_video(url: str, quality: int = 1080):
 
                 return file_path, width, height
 
-        except (DownloadError, ExtractorError, Exception) as e:
+        except Exception as e:
             last_error = e
-            logger.warning(f"Attempt {attempt} failed: {e}")
+            logger.warning("Attempt %s failed for %s: %s", attempt, url, e, exc_info=True)
             time.sleep(2 * attempt)
 
-    logger.error(f"All attempts failed | url={url} | error={last_error}")
-    raise RuntimeError(f"Download failed: {url}") from last_error
+    error_detail = str(last_error) if last_error else "unknown error"
+    exc_info = (type(last_error), last_error, last_error.__traceback__) if last_error else None
+    logger.error("All attempts failed | url=%s | error=%s", url, error_detail, exc_info=exc_info)
+    raise DownloadFailedError(f"Download failed for {url}: {error_detail}") from last_error
