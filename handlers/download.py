@@ -6,6 +6,7 @@ from services.user_service import get_or_create_user, save_download
 from telegram.ext import ContextTypes
 from dependencies.redis import redis_client
 from services.video_info import get_video_info
+from services.video_info import is_tiktok_url
 from services.worker import video_procedure
 import json
 import logging
@@ -54,7 +55,18 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
         logger.info(f"Getting video info for URL: {url}")
 
-        video_info = get_video_info(url)
+        try:
+            video_info = get_video_info(url)
+        except Exception as e:
+            if not is_tiktok_url(url):
+                raise
+
+            logger.warning(
+                "TikTok video info failed, queueing download without preflight size check: %s",
+                e,
+                exc_info=True,
+            )
+            video_info = None
 
 
         logger.info(
@@ -66,6 +78,21 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
         if not video_info:
+            if is_tiktok_url(url):
+                await update.message.reply_text("📥 Downloading video...")
+
+                async with SessionLocal() as db:
+                    user = await get_or_create_user(
+                        telegram_user_id=update.effective_user.id,
+                        username=update.effective_user.username,
+                        db=db
+                    )
+                    await save_download(user_id=user.id, link=url, db=db)
+
+                video_procedure.delay(url, chat_id, user_id)
+                logger.info(f"Task queued for TikTok URL without video info: {url}")
+                return
+
             await update.message.reply_text("❌ Could not fetch video information. Please check the URL and try again.")
             return
 

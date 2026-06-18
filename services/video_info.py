@@ -26,6 +26,22 @@ def is_tiktok_url(url: str) -> bool:
     return "tiktok.com" in url
 
 
+def tiktok_extractor_args() -> dict:
+    return {
+        "tiktok": {
+            "api_hostname": [
+                "api16-normal-c-useast1a.tiktokv.com",
+                "api22-normal-c-useast1a.tiktokv.com",
+            ],
+            "app_info": [
+                "/musical_ly/35.1.3/2023501030/0",
+                "/musical_ly/34.5.5/2023405050/0",
+                "/trill/35.1.3/2023501030/1180",
+            ],
+        }
+    }
+
+
 def get_video_info(url: str):
     options = {
         "quiet": True,
@@ -59,6 +75,7 @@ def get_video_info(url: str):
         }
 
     if is_tiktok_url(url):
+        options["extractor_args"] = tiktok_extractor_args()
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
