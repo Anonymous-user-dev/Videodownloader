@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str
 
     YOUTUBE_COOKIES_PATH: str | None = None
+    TIKTOK_COOKIES_PATH: str | None = None
     YTDLP_COOKIES_PATH: str | None = None
 
     APP_ENV: str = "development"
