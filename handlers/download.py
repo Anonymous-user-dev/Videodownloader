@@ -14,6 +14,10 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
+MEMORY_SAFE_QUALITY = 480
+MEMORY_SAFE_QUALITY_AFTER_SECONDS = 90
+MEMORY_SAFE_MAX_DURATION_SECONDS = 150
+
 
 def get_known_file_size(video_info: dict) -> int | None:
     size = video_info.get("filesize") or video_info.get("filesize_approx")
@@ -33,6 +37,13 @@ def format_size(size: int | None) -> str:
     if not size:
         return "unknown size"
     return f"{size / (1024 * 1024):.1f}MB"
+
+
+def get_memory_safe_quality(video_info: dict) -> int:
+    duration = video_info.get("duration")
+    if duration and duration >= MEMORY_SAFE_QUALITY_AFTER_SECONDS:
+        return MEMORY_SAFE_QUALITY
+    return 1080
 
 
 async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,11 +100,28 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
                     )
                     await save_download(user_id=user.id, link=url, db=db)
 
-                video_procedure.delay(url, chat_id, user_id)
-                logger.info(f"Task queued for TikTok URL without video info: {url}")
+                video_procedure.delay(url, chat_id, user_id, MEMORY_SAFE_QUALITY)
+                logger.info(
+                    "Task queued for TikTok URL without video info: %s with quality %sp",
+                    url,
+                    MEMORY_SAFE_QUALITY,
+                )
                 return
 
             await update.message.reply_text("❌ Could not fetch video information. Please check the URL and try again.")
+            return
+
+        duration = video_info.get("duration")
+        if duration and duration > MEMORY_SAFE_MAX_DURATION_SECONDS:
+            logger.info(
+                "Video too long for 512MB worker memory: duration=%ss url=%s",
+                duration,
+                url,
+            )
+            await update.message.reply_text(
+                "❌ This video is too long for the current 512MB server limit.\n\n"
+                "Please send a video around 2 minutes or shorter."
+            )
             return
 
         file_size = get_known_file_size(video_info)
@@ -171,8 +199,9 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
             await save_download(user_id=user.id, link=url, db=db)
 
 
-        video_procedure.delay(url, chat_id, user_id)
-        logger.info(f"Task queued for URL: {url}")
+        quality = get_memory_safe_quality(video_info)
+        video_procedure.delay(url, chat_id, user_id, quality)
+        logger.info(f"Task queued for URL: {url} with quality {quality}p")
 
     except Exception as e:
         error_msg = f"Error checking video: {str(e)}\n{traceback.format_exc()}"

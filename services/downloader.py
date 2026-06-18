@@ -66,6 +66,15 @@ def tiktok_extractor_args() -> dict:
 
 def build_format(url: str, quality: int) -> str:
     if is_youtube_url(url):
+        if quality <= 480:
+            return (
+                f"best[height<={quality}][ext=mp4]/"
+                f"best*[height<={quality}][ext=mp4]/"
+                f"best[height<={quality}]/"
+                "best[ext=mp4]/"
+                "best"
+            )
+
         return (
             f"best[height<={quality}][ext=mp4]/"
             f"best*[height<={quality}]/"
@@ -218,14 +227,16 @@ def download_video(url: str, quality: int = 1080):
 
             if is_youtube_url(url):
                 if attempt == 1:
-                    options["format"] = (
-                        f"bestvideo*[height<={quality}]+bestaudio/"
-                        f"best*[height<={quality}]"
-                    )
+                    options["format"] = build_format(url, quality)
                 elif attempt == 2:
-                    options["format"] = "bestvideo*+bestaudio/best*"
+                    options["format"] = (
+                        f"best*[height<={quality}][ext=mp4]/"
+                        f"best*[height<={quality}]/"
+                        "best[ext=mp4]/"
+                        "best"
+                    )
                 else:
-                    options["format"] = "best*"
+                    options["format"] = "best[ext=mp4]/best"
 
             if is_tiktok_url(url):
                 if attempt == 1:
