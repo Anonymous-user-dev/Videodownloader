@@ -65,7 +65,7 @@ def base_options(url: str, quality: int, unique_id: str):
         "format": build_format(url, quality),
     }
 
-    cookie_path = get_cookie_path()
+    cookie_path = get_cookie_path(url)
     if cookie_path:
         options["cookiefile"] = cookie_path
         logger.info(f"Using yt-dlp cookies from: {cookie_path}")

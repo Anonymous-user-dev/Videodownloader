@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     WEBHOOK_URL: str
     WEBHOOK_SECRET: str
 
+    YOUTUBE_COOKIES_PATH: str | None = None
     YTDLP_COOKIES_PATH: str | None = None
 
     APP_ENV: str = "development"

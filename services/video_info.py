@@ -24,7 +24,7 @@ def get_video_info(url: str):
         "socket_timeout": 20,
     }
 
-    cookie_path = get_cookie_path()
+    cookie_path = get_cookie_path(url)
     if cookie_path:
         options["cookiefile"] = cookie_path
         logger.info("Using yt-dlp cookies for video info: %s", cookie_path)
