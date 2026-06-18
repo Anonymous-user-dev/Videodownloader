@@ -5,9 +5,8 @@ from config import settings
 import logging
 
 logging.basicConfig(
-    filename="app.logs",
-    encoding="utf-8",
-    level=logging.DEBUG if settings.APP_ENV == "development" else logging.INFO,
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 
 logger = logging.getLogger(__name__)

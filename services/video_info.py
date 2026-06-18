@@ -1,7 +1,19 @@
+import logging
 import yt_dlp
+
 from services.ytdlp_cookies import get_cookie_path
 
+logger = logging.getLogger(__name__)
+
 MAX_DURATION = 30 * 60
+
+
+def is_youtube_url(url: str) -> bool:
+    return "youtube.com" in url or "youtu.be" in url
+
+
+def is_tiktok_url(url: str) -> bool:
+    return "tiktok.com" in url
 
 
 def get_video_info(url: str):
@@ -15,6 +27,30 @@ def get_video_info(url: str):
     cookie_path = get_cookie_path()
     if cookie_path:
         options["cookiefile"] = cookie_path
+        logger.info("Using yt-dlp cookies for video info: %s", cookie_path)
+    else:
+        logger.warning("No yt-dlp cookies found for video info")
+
+    if is_youtube_url(url):
+        options["http_headers"] = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+    if is_tiktok_url(url):
+        options["http_headers"] = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.tiktok.com/",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
 
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
