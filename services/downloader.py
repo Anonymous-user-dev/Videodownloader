@@ -32,10 +32,8 @@ def expand_url(url: str) -> str:
 def build_format(url: str, quality: int) -> str:
     if "youtube.com" in url or "youtu.be" in url:
         return (
-            f"bv*[height<={quality}][vcodec^=avc1]+ba[ext=m4a]/"
-            f"bv*[height<={quality}]+ba/"
-            f"b[height<={quality}]/"
-            "best"
+            f"bv*[height<={quality}]+ba/b[height<={quality}]/"
+            "bv*+ba/b/best"
         )
 
     if "instagram.com" in url:
@@ -114,6 +112,14 @@ def download_video(url: str, quality: int = 1080):
     for attempt in range(1, 4):
         try:
             options = base_options(url, quality, unique_id)
+
+            if "youtube.com" in url or "youtu.be" in url:
+                if attempt == 1:
+                    options["format"] = f"bv*[height<={quality}]+ba/b[height<={quality}]/best"
+                elif attempt == 2:
+                    options["format"] = "bv*+ba/b/best"
+                else:
+                    options["format"] = "best"
 
             if "tiktok.com" in url:
                 if attempt == 1:
