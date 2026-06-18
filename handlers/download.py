@@ -14,6 +14,26 @@ import traceback
 logger = logging.getLogger(__name__)
 
 
+def get_known_file_size(video_info: dict) -> int | None:
+    size = video_info.get("filesize") or video_info.get("filesize_approx")
+    if size:
+        return int(size)
+
+    format_sizes = []
+    for item in video_info.get("requested_formats") or video_info.get("formats") or []:
+        item_size = item.get("filesize") or item.get("filesize_approx")
+        if item_size:
+            format_sizes.append(int(item_size))
+
+    return max(format_sizes) if format_sizes else None
+
+
+def format_size(size: int | None) -> str:
+    if not size:
+        return "unknown size"
+    return f"{size / (1024 * 1024):.1f}MB"
+
+
 async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     chat_id = update.effective_chat.id
@@ -37,22 +57,28 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         video_info = get_video_info(url)
 
 
-        logger.info(f"Video info received: {video_info.keys() if video_info else 'None'}")
+        logger.info(
+            "Video info received: keys=%s extractor=%s id=%s title=%s",
+            list(video_info.keys()) if video_info else None,
+            video_info.get("extractor") if video_info else None,
+            video_info.get("id") if video_info else None,
+            video_info.get("title") if video_info else None,
+        )
 
         if not video_info:
             await update.message.reply_text("❌ Could not fetch video information. Please check the URL and try again.")
             return
 
-        file_size = video_info.get('filesize', 0) or video_info.get('filesize_approx', 0)
+        file_size = get_known_file_size(video_info)
 
 
-        logger.info(f"Video file size: {file_size} bytes ({file_size / (1024 * 1024):.1f}MB)")
+        logger.info("Video file size: %s bytes (%s)", file_size, format_size(file_size))
 
 
         MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
-        if file_size > MAX_FILE_SIZE:
-            logger.info(f"Video too large ({file_size / (1024 * 1024):.1f}MB), offering quality options")
+        if file_size and file_size > MAX_FILE_SIZE:
+            logger.info("Video too large (%s), offering quality options", format_size(file_size))
 
 
             quality_data = {
@@ -102,8 +128,12 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         # Video is under 50MB, proceed with download
-        logger.info(f"Video under 50MB, proceeding with download")
-        await update.message.reply_text(f"📥 Downloading video ({file_size / (1024 * 1024):.1f}MB)...")
+        if file_size:
+            logger.info("Video under 50MB, proceeding with download")
+            await update.message.reply_text(f"📥 Downloading video ({format_size(file_size)})...")
+        else:
+            logger.info("Video size is unknown, proceeding with download")
+            await update.message.reply_text("📥 Downloading video...")
 
         async with SessionLocal() as db:
             user = await get_or_create_user(

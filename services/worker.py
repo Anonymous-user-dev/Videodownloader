@@ -1,22 +1,39 @@
 # services/worker.py
 
 from celery import Celery
+from celery.signals import setup_logging
 import os
 import requests
 from dependencies.redis_sync import redis_client
 import logging
+import sys
 import time
+import traceback
 
 from config import settings
 from services.downloader import download_video
 
 # from services.downloads_slots import release_slot
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
+
+def configure_logging():
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, stream=sys.stdout, force=True)
+
+
+@setup_logging.connect
+def configure_celery_logging(**kwargs):
+    configure_logging()
+
+
+configure_logging()
 logger = logging.getLogger(__name__)
 app = Celery('tasks', broker=settings.RABBITMQ_HOST)
+app.conf.update(
+    worker_hijack_root_logger=False,
+    worker_redirect_stdouts=True,
+    worker_redirect_stdouts_level="INFO",
+)
 
 
 def send_video_sync(chat_id, file_path, width, height):
@@ -168,7 +185,9 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         logger.info(f"Video sent successfully")
 
     except Exception as e:
+        trace = traceback.format_exc()
         logger.exception("Worker error while processing %s", url)
+        print(f"Worker traceback while processing {url}:\n{trace}", flush=True)
         failure_text = str(e)
         if not failure_text.lower().startswith("download failed"):
             failure_text = f"Download failed: {failure_text}"
