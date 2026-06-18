@@ -32,12 +32,9 @@ def expand_url(url: str) -> str:
 def build_format(url: str, quality: int) -> str:
     if "youtube.com" in url or "youtu.be" in url:
         return (
-            f"bestvideo*[height<={quality}][vcodec^=avc1]+bestaudio[ext=m4a]/"
-            f"best*[height<={quality}][vcodec^=avc1]/"
-            f"bestvideo*[height<={quality}]+bestaudio/"
+            f"best[height<={quality}][ext=mp4]/"
             f"best*[height<={quality}]/"
-            "bestvideo*+bestaudio/"
-            "best*"
+            "best"
         )
 
 
@@ -63,7 +60,7 @@ def base_options(url: str, quality: int, unique_id: str):
         "retries": 5,
         "fragment_retries": 5,
         "socket_timeout": 30,
-        "concurrent_fragment_downloads": 3,
+        "concurrent_fragment_downloads": 2,
         "postprocessor_args": ["-movflags", "+faststart"],
         "format": build_format(url, quality),
         "js_runtimes": {
