@@ -32,8 +32,10 @@ def expand_url(url: str) -> str:
 def build_format(url: str, quality: int) -> str:
     if "youtube.com" in url or "youtu.be" in url:
         return (
-            f"bv*[height<={quality}]+ba/b[height<={quality}]/"
-            "bv*+ba/b/best"
+            f"bestvideo*[height<={quality}]+bestaudio/"
+            f"best*[height<={quality}]/"
+            "bestvideo*+bestaudio/"
+            "best*"
         )
 
     if "instagram.com" in url:
@@ -79,11 +81,6 @@ def base_options(url: str, quality: int, unique_id: str):
             ),
             "Accept-Language": "en-US,en;q=0.9",
         }
-        options["extractor_args"] = {
-            "youtube": {
-                "player_client": ["mweb"],
-            }
-        }
 
     # TikTok anti-block headers
     if "tiktok.com" in url:
@@ -115,11 +112,14 @@ def download_video(url: str, quality: int = 1080):
 
             if "youtube.com" in url or "youtu.be" in url:
                 if attempt == 1:
-                    options["format"] = f"bv*[height<={quality}]+ba/b[height<={quality}]/best"
+                    options["format"] = (
+                        f"bestvideo*[height<={quality}]+bestaudio/"
+                        f"best*[height<={quality}]"
+                    )
                 elif attempt == 2:
-                    options["format"] = "bv*+ba/b/best"
+                    options["format"] = "bestvideo*+bestaudio/best*"
                 else:
-                    options["format"] = "best"
+                    options["format"] = "best*"
 
             if "tiktok.com" in url:
                 if attempt == 1:

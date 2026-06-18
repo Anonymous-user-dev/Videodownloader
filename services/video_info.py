@@ -43,11 +43,6 @@ def get_video_info(url: str):
             ),
             "Accept-Language": "en-US,en;q=0.9",
         }
-        options["extractor_args"] = {
-            "youtube": {
-                "player_client": ["mweb"],
-            }
-        }
 
     if is_tiktok_url(url):
         options["http_headers"] = {
