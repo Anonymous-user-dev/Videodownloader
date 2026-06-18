@@ -19,12 +19,12 @@ def get_cookie_path() -> str | None:
     )
 
     if not source_path.exists():
-        logger.warning("yt-dlp cookies file not found")
+        logger.warning("yt-dlp cookies file not found: %s", source_path)
         return None
 
     shutil.copyfile(source_path, RUNTIME_COOKIE_PATH)
 
-    logger.info(
+    logger.warning(
         "Using yt-dlp cookies: source=%s runtime=%s size=%s",
         source_path,
         RUNTIME_COOKIE_PATH,
