@@ -78,12 +78,20 @@ def send_download_started_message(chat_id, file_size: int | None):
         logger.warning("Could not send download started message: %s", exc, exc_info=True)
 
 
+def send_worker_started_message(chat_id):
+    try:
+        send_message_sync(chat_id, "📥 Downloading video...")
+    except Exception as exc:
+        logger.warning("Could not send worker started message: %s", exc, exc_info=True)
+
+
 @app.task(rate_limit='3/m', bind=True, max_retries=2)
 def video_procedure(self, url, chat_id, user_id, quality=1080):
     logger.info(f"Worker start for user {user_id}, requested quality: {quality}p")
     file_path = None
 
     try:
+        send_worker_started_message(chat_id)
         video_info = get_worker_video_info(url)
         info_size = None
 
@@ -111,7 +119,8 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                 quality = MEMORY_SAFE_QUALITY
 
         quality = choose_quality(quality, video_info)
-        send_download_started_message(chat_id, info_size)
+        if info_size:
+            send_download_started_message(chat_id, info_size)
         file_path, width, height, media_type = download_video(url, quality)
 
         if not file_path or not os.path.exists(file_path):
