@@ -3,8 +3,6 @@ import os
 import uuid
 import logging
 import time
-import requests
-import subprocess
 from pathlib import Path
 from services.media_probe import is_audio_file, probe_video
 from services.tiktok_ytdlp import tiktok_extractor_args
@@ -161,83 +159,6 @@ def find_downloaded_file(info: dict, ydl: yt_dlp.YoutubeDL) -> str | None:
     return next((path for path in possible_paths if path and os.path.exists(path)), None)
 
 
-def get_thumbnail_url(info: dict) -> str | None:
-    thumbnails = info.get("thumbnails") or []
-    for thumbnail in reversed(thumbnails):
-        url = thumbnail.get("url")
-        if url:
-            return url
-    return info.get("thumbnail")
-
-
-def download_thumbnail(thumbnail_url: str, output_path: Path) -> Path:
-    response = requests.get(
-        thumbnail_url,
-        headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            )
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    output_path.write_bytes(response.content)
-    return output_path
-
-
-def build_video_from_audio_cover(audio_path: str, thumbnail_url: str) -> str:
-    audio = Path(audio_path)
-    thumb_path = audio.with_suffix(".cover.jpg")
-    output_path = audio.with_suffix(".cover.mp4")
-
-    download_thumbnail(thumbnail_url, thumb_path)
-
-    command = [
-        "ffmpeg",
-        "-y",
-        "-loop",
-        "1",
-        "-i",
-        str(thumb_path),
-        "-i",
-        str(audio),
-        "-vf",
-        "scale=720:-2,format=yuv420p",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "ultrafast",
-        "-tune",
-        "stillimage",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-shortest",
-        "-movflags",
-        "+faststart",
-        str(output_path),
-    ]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=180)
-    if result.returncode != 0 or not output_path.exists():
-        raise RuntimeError(f"Could not build video from audio-only TikTok: {result.stderr[-500:]}")
-
-    try:
-        thumb_path.unlink(missing_ok=True)
-    except Exception as exc:
-        logger.warning("Could not clean thumbnail %s: %s", thumb_path, exc)
-
-    try:
-        audio.unlink(missing_ok=True)
-    except Exception as exc:
-        logger.warning("Could not clean audio source %s: %s", audio, exc)
-
-    logger.info("Built video from audio-only TikTok media: %s", output_path)
-    return str(output_path)
-
-
 def download_video(url: str, quality: int = 1080):
     url = normalize_url(url)
     quality = min(int(quality), 720)
@@ -286,21 +207,6 @@ def download_video(url: str, quality: int = 1080):
                 has_video, probed_width, probed_height, codec = probe_video(file_path)
                 if not has_video:
                     if is_audio_file(file_path):
-                        if is_tiktok_url(url):
-                            thumbnail_url = get_thumbnail_url(info)
-                            if thumbnail_url:
-                                try:
-                                    video_path = build_video_from_audio_cover(file_path, thumbnail_url)
-                                    _, video_width, video_height, _ = probe_video(video_path)
-                                    return video_path, video_width, video_height, "video"
-                                except Exception as exc:
-                                    logger.warning(
-                                        "Could not build video from TikTok audio-only media: %s",
-                                        exc,
-                                        exc_info=True,
-                                    )
-                            logger.warning("TikTok audio-only media had no thumbnail to build video: %s", url)
-
                         logger.info("Downloaded audio-only media: %s", file_path)
                         return file_path, 0, 0, "audio"
                     raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
