@@ -12,9 +12,14 @@ import traceback
 
 from config import settings
 from services.downloader import download_video
+from services.video_info import get_video_info, is_tiktok_url
 
 # from services.downloads_slots import release_slot
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+MEMORY_SAFE_QUALITY = 480
+MEMORY_SAFE_QUALITY_AFTER_SECONDS = 90
+MEMORY_SAFE_MAX_DURATION_SECONDS = 150
+MAX_SIZE = 50 * 1024 * 1024
 
 
 def configure_logging():
@@ -34,6 +39,56 @@ app.conf.update(
     worker_redirect_stdouts=True,
     worker_redirect_stdouts_level="INFO",
 )
+
+
+def get_known_file_size(video_info: dict) -> int | None:
+    size = video_info.get("filesize") or video_info.get("filesize_approx")
+    if size:
+        return int(size)
+
+    format_sizes = []
+    for item in video_info.get("requested_formats") or video_info.get("formats") or []:
+        item_size = item.get("filesize") or item.get("filesize_approx")
+        if item_size:
+            format_sizes.append(int(item_size))
+
+    return max(format_sizes) if format_sizes else None
+
+
+def choose_quality(requested_quality: int, video_info: dict | None) -> int:
+    quality = min(int(requested_quality), 720)
+    if not video_info:
+        return min(quality, MEMORY_SAFE_QUALITY)
+
+    duration = video_info.get("duration")
+    if duration and duration >= MEMORY_SAFE_QUALITY_AFTER_SECONDS:
+        return min(quality, MEMORY_SAFE_QUALITY)
+    return quality
+
+
+def get_worker_video_info(url: str) -> dict | None:
+    try:
+        video_info = get_video_info(url)
+    except Exception as exc:
+        if not is_tiktok_url(url):
+            raise
+
+        logger.warning(
+            "TikTok video info failed in worker; continuing without preflight: %s",
+            exc,
+            exc_info=True,
+        )
+        return None
+
+    logger.info(
+        "Worker video info: keys=%s extractor=%s id=%s title=%s duration=%s",
+        list(video_info.keys()),
+        video_info.get("extractor"),
+        video_info.get("id"),
+        video_info.get("title"),
+        video_info.get("duration"),
+    )
+    return video_info
 
 
 def send_video_sync(chat_id, file_path, width, height):
@@ -182,6 +237,33 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
     file_path = None
 
     try:
+        video_info = get_worker_video_info(url)
+
+        if video_info:
+            duration = video_info.get("duration")
+            if duration and duration > MEMORY_SAFE_MAX_DURATION_SECONDS:
+                logger.info(
+                    "Video too long for 512MB worker memory: duration=%ss url=%s",
+                    duration,
+                    url,
+                )
+                send_message_sync(
+                    chat_id,
+                    "❌ This video is too long for the current 512MB server limit.\n\n"
+                    "Please send a video around 2 minutes or shorter."
+                )
+                return
+
+            info_size = get_known_file_size(video_info)
+            if info_size and info_size > MAX_SIZE and quality > MEMORY_SAFE_QUALITY:
+                logger.info(
+                    "Preflight size %.2fMB exceeds Telegram limit; lowering quality to %sp",
+                    info_size / (1024 * 1024),
+                    MEMORY_SAFE_QUALITY,
+                )
+                quality = MEMORY_SAFE_QUALITY
+
+        quality = choose_quality(quality, video_info)
         file_path, width, height, media_type = download_video(url, quality)
 
         if not file_path or not os.path.exists(file_path):
@@ -190,8 +272,6 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         size = os.path.getsize(file_path)
         size_mb = size / (1024 * 1024)
         logger.info(f"Final file size: {size_mb:.2f}MB for {quality}p quality")
-
-        MAX_SIZE = 50 * 1024 * 1024  # Telegram limit is 50MB, use 50MB
 
         if size > MAX_SIZE:
             logger.warning(f"Video too large: {size_mb:.2f}MB > 50MB")
