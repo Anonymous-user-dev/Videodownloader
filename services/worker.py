@@ -73,7 +73,7 @@ def send_download_started_message(chat_id, file_size: int | None):
         if file_size:
             send_message_sync(chat_id, f"📥 Downloading video ({format_file_size(file_size)})...")
         else:
-            send_message_sync(chat_id, "📥 Downloading video...")
+            send_message_sync(chat_id, "📥 Downloading video (size unknown)...")
     except Exception as exc:
         logger.warning("Could not send download started message: %s", exc, exc_info=True)
 

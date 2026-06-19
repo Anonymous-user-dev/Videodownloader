@@ -1,5 +1,6 @@
 import logging
 import yt_dlp
+from services.tiktok_ytdlp import tiktok_extractor_args
 from services.ytdlp_cookies import get_cookie_path
 
 logger = logging.getLogger(__name__)
@@ -24,22 +25,6 @@ def is_youtube_url(url: str) -> bool:
 
 def is_tiktok_url(url: str) -> bool:
     return "tiktok.com" in url
-
-
-def tiktok_extractor_args() -> dict:
-    return {
-        "tiktok": {
-            "api_hostname": [
-                "api16-normal-c-useast1a.tiktokv.com",
-                "api22-normal-c-useast1a.tiktokv.com",
-            ],
-            "app_info": [
-                "/musical_ly/35.1.3/2023501030/0",
-                "/musical_ly/34.5.5/2023405050/0",
-                "/trill/35.1.3/2023501030/1180",
-            ],
-        }
-    }
 
 
 def get_video_info(url: str):
