@@ -88,6 +88,7 @@ def send_worker_started_message(chat_id):
 @app.task(rate_limit='3/m', bind=True, max_retries=2)
 def video_procedure(self, url, chat_id, user_id, quality=1080):
     logger.info(f"Worker start for user {user_id}, requested quality: {quality}p")
+    print(f"Worker start | user={user_id} | chat={chat_id} | quality={quality} | url={url}", flush=True)
     file_path = None
 
     try:
@@ -122,6 +123,7 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         if info_size:
             send_download_started_message(chat_id, info_size)
         file_path, width, height, media_type = download_video(url, quality)
+        print(f"Worker downloaded | media_type={media_type} | file={file_path}", flush=True)
 
         if not file_path or not os.path.exists(file_path):
             raise Exception(f"Download failed - file not found")
@@ -153,10 +155,12 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
 
         if media_type == "audio":
             logger.info(f"Sending audio-only TikTok media to chat {chat_id} (Size: {size_mb:.2f}MB)")
+            print(f"Worker sending audio | size_mb={size_mb:.2f} | file={file_path}", flush=True)
             send_audio_sync(chat_id, file_path)
             logger.info("Audio sent successfully")
         else:
             logger.info(f"Sending video to chat {chat_id} (Size: {size_mb:.2f}MB)")
+            print(f"Worker sending video | size_mb={size_mb:.2f} | file={file_path}", flush=True)
             send_video_sync(chat_id, file_path, width, height)
             logger.info(f"Video sent successfully")
 

@@ -5,6 +5,7 @@ import logging
 import time
 from pathlib import Path
 from services.media_probe import is_audio_file, probe_video
+from services.tiktok_direct import download_tiktok_video_direct
 from services.tiktok_ytdlp import tiktok_extractor_args
 from services.ytdlp_cookies import get_cookie_path
 
@@ -159,6 +160,31 @@ def find_downloaded_file(info: dict, ydl: yt_dlp.YoutubeDL) -> str | None:
     return next((path for path in possible_paths if path and os.path.exists(path)), None)
 
 
+def try_tiktok_direct_video(url: str, unique_id: str) -> tuple[str, int, int] | None:
+    output_path = DOWNLOAD_DIR / f"tiktok_direct_{unique_id}.mp4"
+    try:
+        video_path = download_tiktok_video_direct(url, output_path)
+        has_video, width, height, codec = probe_video(video_path)
+        if not has_video:
+            raise RuntimeError(f"TikTok direct fallback returned no video stream: {video_path}")
+
+        logger.info(
+            "TikTok direct fallback succeeded | file=%s | codec=%s | size=%sx%s",
+            video_path,
+            codec,
+            width,
+            height,
+        )
+        return video_path, width, height
+    except Exception as exc:
+        logger.warning("TikTok direct fallback failed for %s: %s", url, exc, exc_info=True)
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception as cleanup_exc:
+            logger.warning("Could not clean failed TikTok direct file %s: %s", output_path, cleanup_exc)
+        return None
+
+
 def download_video(url: str, quality: int = 1080):
     url = normalize_url(url)
     quality = min(int(quality), 720)
@@ -207,6 +233,16 @@ def download_video(url: str, quality: int = 1080):
                 has_video, probed_width, probed_height, codec = probe_video(file_path)
                 if not has_video:
                     if is_audio_file(file_path):
+                        if is_tiktok_url(url):
+                            direct_result = try_tiktok_direct_video(url, unique_id)
+                            if direct_result:
+                                try:
+                                    Path(file_path).unlink(missing_ok=True)
+                                except Exception as cleanup_exc:
+                                    logger.warning("Could not clean yt-dlp audio fallback %s: %s", file_path, cleanup_exc)
+                                video_path, width, height = direct_result
+                                return video_path, width, height, "video"
+
                         logger.info("Downloaded audio-only media: %s", file_path)
                         return file_path, 0, 0, "audio"
                     raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
