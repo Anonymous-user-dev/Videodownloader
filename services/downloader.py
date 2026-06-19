@@ -6,6 +6,7 @@ import time
 import requests
 import subprocess
 from pathlib import Path
+from yt_dlp.utils import urlencode_postdata
 from services.media_probe import is_audio_file, probe_video
 from services.tiktok_ytdlp import tiktok_extractor_args
 from services.ytdlp_cookies import get_cookie_path
@@ -170,9 +171,9 @@ def get_thumbnail_url(info: dict) -> str | None:
     return info.get("thumbnail")
 
 
-def download_thumbnail(thumbnail_url: str, output_path: Path) -> Path:
+def download_image(image_url: str, output_path: Path) -> Path:
     response = requests.get(
-        thumbnail_url,
+        image_url,
         headers={
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -187,12 +188,162 @@ def download_thumbnail(thumbnail_url: str, output_path: Path) -> Path:
     return output_path
 
 
+def image_urls_from_aweme_detail(aweme_detail: dict) -> list[str]:
+    urls = []
+    images = aweme_detail.get("image_post_info", {}).get("images") or []
+
+    for image in images:
+        url_list = (
+            image.get("display_image", {}).get("url_list")
+            or image.get("owner_watermark_image", {}).get("url_list")
+            or image.get("thumbnail", {}).get("url_list")
+            or []
+        )
+        if url_list:
+            urls.append(url_list[-1])
+
+    seen = set()
+    unique_urls = []
+    for url in urls:
+        if url and url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
+    return unique_urls
+
+
+def extract_tiktok_slideshow_image_urls(video_id: str, options: dict, attempt: int) -> list[str]:
+    if not video_id:
+        return []
+
+    api_options = dict(options)
+    api_options["extractor_args"] = tiktok_extractor_args(attempt)
+
+    with yt_dlp.YoutubeDL(api_options) as ydl:
+        ie = ydl.get_info_extractor("TikTok")
+        aweme_detail = ie._call_api(
+            "multi/aweme/detail",
+            video_id,
+            data=urlencode_postdata({
+                "aweme_ids": f"[{video_id}]",
+                "request_source": "0",
+            }),
+            headers={"X-Argus": ""},
+        ).get("aweme_details", [{}])[0]
+
+    image_urls = image_urls_from_aweme_detail(aweme_detail)
+    logger.info("Extracted %s TikTok slideshow image(s) for %s", len(image_urls), video_id)
+    return image_urls
+
+
+def ffconcat_path(path: Path) -> str:
+    return path.as_posix().replace("'", "'\\''")
+
+
+def build_slideshow_video_from_audio(audio_path: str, image_urls: list[str]) -> str:
+    audio = Path(audio_path)
+    image_paths = []
+    output_path = audio.with_suffix(".slideshow.mp4")
+    image_list_path = audio.with_suffix(".images.txt")
+
+    for index, image_url in enumerate(image_urls, start=1):
+        image_path = audio.with_suffix(f".slide{index}.jpg")
+        download_image(image_url, image_path)
+        image_paths.append(image_path)
+
+    if not image_paths:
+        raise RuntimeError("No slideshow images were downloaded")
+
+    audio_duration = get_audio_duration(audio_path)
+    seconds_per_image = max(audio_duration / len(image_paths), 1.0)
+
+    image_list_path.write_text(
+        "".join(
+            f"file '{ffconcat_path(image_path)}'\n"
+            f"duration {seconds_per_image:.3f}\n"
+            for image_path in image_paths
+        )
+        + f"file '{ffconcat_path(image_paths[-1])}'\n",
+        encoding="utf-8",
+    )
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(image_list_path),
+        "-i",
+        str(audio),
+        "-vf",
+        "scale=720:-2,format=yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-r",
+        "30",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=240)
+    if result.returncode != 0 or not output_path.exists():
+        raise RuntimeError(f"Could not build TikTok slideshow video: {result.stderr[-500:]}")
+
+    for image_path in image_paths:
+        try:
+            image_path.unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning("Could not clean slideshow image %s: %s", image_path, exc)
+
+    try:
+        image_list_path.unlink(missing_ok=True)
+        audio.unlink(missing_ok=True)
+    except Exception as exc:
+        logger.warning("Could not clean slideshow temp file: %s", exc)
+
+    logger.info("Built TikTok slideshow video: %s", output_path)
+    return str(output_path)
+
+
+def get_audio_duration(audio_path: str) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            audio_path,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    if result.returncode != 0:
+        return 30.0
+    try:
+        return max(float(result.stdout.strip()), 1.0)
+    except ValueError:
+        return 30.0
+
+
 def build_video_from_audio_cover(audio_path: str, thumbnail_url: str) -> str:
     audio = Path(audio_path)
     thumb_path = audio.with_suffix(".cover.jpg")
     output_path = audio.with_suffix(".cover.mp4")
 
-    download_thumbnail(thumbnail_url, thumb_path)
+    download_image(thumbnail_url, thumb_path)
 
     command = [
         "ffmpeg",
@@ -287,6 +438,28 @@ def download_video(url: str, quality: int = 1080):
                 if not has_video:
                     if is_audio_file(file_path):
                         if is_tiktok_url(url):
+                            try:
+                                image_urls = extract_tiktok_slideshow_image_urls(info.get("id"), options, attempt)
+                            except Exception as exc:
+                                logger.warning(
+                                    "Could not extract TikTok slideshow images: %s",
+                                    exc,
+                                    exc_info=True,
+                                )
+                                image_urls = []
+
+                            if image_urls:
+                                try:
+                                    video_path = build_slideshow_video_from_audio(file_path, image_urls)
+                                    _, video_width, video_height, _ = probe_video(video_path)
+                                    return video_path, video_width, video_height, "video"
+                                except Exception as exc:
+                                    logger.warning(
+                                        "Could not build TikTok slideshow video: %s",
+                                        exc,
+                                        exc_info=True,
+                                    )
+
                             thumbnail_url = get_thumbnail_url(info)
                             if thumbnail_url:
                                 try:
