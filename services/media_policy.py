@@ -4,6 +4,12 @@ MEMORY_SAFE_MAX_DURATION_SECONDS = 150
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
 
 
+def format_file_size(size: int | None) -> str:
+    if not size:
+        return "unknown size"
+    return f"{size / (1024 * 1024):.1f}MB"
+
+
 def get_known_file_size(video_info: dict) -> int | None:
     size = video_info.get("filesize") or video_info.get("filesize_approx")
     if size:
