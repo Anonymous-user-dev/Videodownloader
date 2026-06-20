@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
+
+    if update.message is None or update.message.text is None:
+        return
+
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
