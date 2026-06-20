@@ -85,7 +85,7 @@ def send_download_started_message(chat_id: int, file_size: int | None) -> None:
         safe_send_message(chat_id, "Downloading video...")
 
 
-def remove_file_safely(file_path: str | None) -> None:
+def remove_file(file_path: str | None) -> None:
     if not file_path:
         return
 
@@ -156,7 +156,7 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                 MAX_TELEGRAM_FILE_SIZE / (1024 * 1024),
                 quality)
 
-            remove_file_safely(file_path)
+            remove_file(file_path)
             file_path = None
 
             if quality > 480:
@@ -202,4 +202,4 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         safe_send_message(chat_id,"Download failed. The link may be unsupported, private, too large, or blocked by the platform.")
 
     finally:
-        remove_file_safely(file_path)
+        remove_file(file_path)
