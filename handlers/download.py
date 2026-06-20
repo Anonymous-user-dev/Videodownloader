@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 from dependencies.redis import redis_client
 from services.worker import video_procedure
 import json
+from services.video_info import is_valid_url
 import logging
 import traceback
 
@@ -19,6 +20,11 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     url = update.message.text.strip()
+
+    if not is_valid_url(url):
+        await update.message.reply_text("Please send a valid URL starting with http:// or https://")
+        return
+
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
 
@@ -79,7 +85,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
         pending_key = f"pending_quality:{chat_id}"
         pending_data = await redis_client.get(pending_key)
 
-        logger.info(f"Pending data from Redis: {pending_data}")
+        logger.info("Pending data exists=%s for key=%s", bool(pending_data), pending_key)
 
         if not pending_data:
             await query.edit_message_text("Selection expired. Please send the video link again.")
@@ -109,6 +115,6 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
         logger.info(f"Task queued with quality {quality}p for URL: {original_url}")
 
     except Exception as e:
-        error_msg = f"Error in quality callback: {str(e)}\n{traceback.format_exc()}"
-        logger.error(error_msg)
-        await update.callback_query.edit_message_text(f"Error: {str(e)}")
+        logger.exception("Error in quality callback")
+        if update.callback_query:
+            await update.callback_query.edit_message_text("Something went wrong. Please try again.")

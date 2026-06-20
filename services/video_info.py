@@ -1,4 +1,5 @@
 import logging
+import validators
 import yt_dlp
 from services.tiktok_ytdlp import tiktok_extractor_args
 from services.ytdlp_cookies import get_cookie_path
@@ -82,3 +83,7 @@ def get_video_info(url: str):
         raise Exception("Video too long")
 
     return info
+
+def is_valid_url(url):
+    return validators.url(url)
+
