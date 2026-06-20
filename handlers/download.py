@@ -29,7 +29,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     try:
-        await update.message.reply_text("📥 Request received. I’ll process it now...")
+        await update.message.reply_text("Request received. I’ll process it now...")
 
         async with SessionLocal() as db:
             user = await get_or_create_user(
@@ -46,7 +46,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         error_msg = f"Error queueing video: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
         await update.message.reply_text(
-            f"❌ Error processing video: {str(e)}\n\nPlease make sure the URL is valid and try again.")
+            f"Error processing video: {str(e)}\n\nPlease make sure the URL is valid and try again.")
 
 
 async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,7 +68,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
         logger.info(f"Quality selected: {quality}p for chat {chat_id}")
 
         if chat_id != original_chat_id:
-            await query.edit_message_text("❌ This quality selection is not for this chat.")
+            await query.edit_message_text("This quality selection is not for this chat.")
             return
 
         pending_key = f"pending_quality:{chat_id}"
@@ -77,7 +77,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
         logger.info(f"Pending data from Redis: {pending_data}")
 
         if not pending_data:
-            await query.edit_message_text("❌ Selection expired. Please send the video link again.")
+            await query.edit_message_text("Selection expired. Please send the video link again.")
             return
 
         pending_data = json.loads(pending_data.decode() if isinstance(pending_data, bytes) else pending_data)
@@ -98,7 +98,7 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
             await save_download(user_id=user.id, link=original_url, db=db)
 
 
-        await query.edit_message_text(f"📥 Downloading video in {quality}p quality... Please wait.")
+        await query.edit_message_text(f"Downloading video in {quality}p quality... Please wait.")
 
         video_procedure.delay(original_url, chat_id, user_id, quality)
         logger.info(f"Task queued with quality {quality}p for URL: {original_url}")
@@ -106,4 +106,4 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         error_msg = f"Error in quality callback: {str(e)}\n{traceback.format_exc()}"
         logger.error(error_msg)
-        await update.callback_query.edit_message_text(f"❌ Error: {str(e)}")
+        await update.callback_query.edit_message_text(f"Error: {str(e)}")
