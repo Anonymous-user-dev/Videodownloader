@@ -14,15 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
 
     if update.message is None or update.message.text is None:
         return
 
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
+    url = update.message.text.strip()
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
 
-    logger.info(f"Received message from user {user_id}: {url}")
+    logger.info("Received video request from user_id=%s", user_id)
 
     # Check rate limit
     from services.rate_limit import check_rate_limit
@@ -33,7 +33,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     try:
-        await update.message.reply_text("Request received. I’ll process it now...")
+        await update.message.reply_text("Request received. Preparing download...")
 
         async with SessionLocal() as db:
             user = await get_or_create_user(
@@ -44,18 +44,19 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
             await save_download(user_id=user.id, link=url, db=db)
 
         video_procedure.delay(url, chat_id, user_id)
-        logger.info(f"Task queued for URL: {url}")
 
     except Exception as e:
-        error_msg = f"Error queueing video: {str(e)}\n{traceback.format_exc()}"
-        logger.error(error_msg)
-        await update.message.reply_text(
-            f"Error processing video: {str(e)}\n\nPlease make sure the URL is valid and try again.")
+        logger.exception("Error quering video")
+        await update.message.reply_text("Could not process this link. Please make sure the URL is valid and try again.")
 
 
 async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle quality selection from inline keyboard"""
     try:
+
+        if update.callback_query is None:
+            return
+
         query = update.callback_query
         await query.answer()
 
