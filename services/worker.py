@@ -161,29 +161,28 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
             remove_file(file_path)
             file_path = None
 
-            if quality > 480:
-                lower_quality = 480
+            retry_qualities = [720, 480] if quality > 720 else [480]
+            retry_qualities = [item for item in retry_qualities if item < quality]
 
+            for lower_quality in retry_qualities:
                 safe_send_message(chat_id,f"File is too large. Retrying at {lower_quality}p...")
 
                 logger.info("Retrying inside same task with quality=%sp", lower_quality)
 
                 file_path, width, height, media_type, size = download_and_validate(url,lower_quality)
-
                 size_mb = size / (1024 * 1024)
 
-                if size > MAX_TELEGRAM_FILE_SIZE:
-                    logger.warning("File still too large after retry. size=%.2fMB",size_mb)
+                if size <= MAX_TELEGRAM_FILE_SIZE:
+                    quality = lower_quality
+                    break
 
-                    safe_send_message(chat_id,
-                        f"Video is still too large ({size_mb:.1f}MB) even at 480p.\n\n"
-                        "Telegram allows a limited file size. Please try a shorter video.")
-                    return
-
-                quality = lower_quality
-
+                logger.warning("File still too large after retry. size=%.2fMB quality=%sp",size_mb,lower_quality)
+                remove_file(file_path)
+                file_path = None
             else:
-                safe_send_message(chat_id,f"Video is too large ({size_mb:.1f}MB).\n\nPlease try a shorter video.")
+                safe_send_message(chat_id,
+                    f"Video is still too large ({size_mb:.1f}MB) even at 480p.\n\n"
+                    "Telegram allows a limited file size. Please try a shorter video.")
                 return
 
         if media_type == "audio":

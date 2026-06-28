@@ -52,18 +52,13 @@ def is_tiktok_url(url: str) -> bool:
 
 def build_format(url: str, quality: int) -> str:
     if is_youtube_url(url):
-        if quality <= 480:
-            return (
-                f"best[height<={quality}][ext=mp4]/"
-                f"best*[height<={quality}][ext=mp4]/"
-                f"best[height<={quality}]/"
-                "best[ext=mp4]/"
-                "best"
-            )
-
         return (
-            f"best[height<={quality}][ext=mp4]/"
-            f"best*[height<={quality}]/"
+            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo+bestaudio/"
+            "best*[vcodec!=none][acodec!=none][ext=mp4]/"
+            "best*[vcodec!=none][acodec!=none]/"
+            "best[ext=mp4]/"
             "best"
         )
 
@@ -116,6 +111,8 @@ def base_options(url: str, quality: int, unique_id: str):
         logger.warning("No yt-dlp cookies are being used")
 
     if is_youtube_url(url):
+        options["format_sort"] = [f"res:{quality}", "ext:mp4:m4a"]
+        options["format_sort_force"] = True
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -186,31 +183,40 @@ def try_tiktok_direct_video(url: str, unique_id: str) -> tuple[str, int, int] | 
         return None
 
 
+def build_quality_ladder(requested_quality: int) -> list[int]:
+    requested_quality = min(int(requested_quality), 1080)
+    ladder = [requested_quality, 720, 480]
+    return list(dict.fromkeys(quality for quality in ladder if quality <= requested_quality))
+
+
+def visible_resolution(width: int | None, height: int | None) -> int:
+    if not width or not height:
+        return 0
+    return min(width, height)
+
+
+def is_youtube_quality_too_low(target_quality: int, width: int | None, height: int | None) -> bool:
+    if target_quality < 720:
+        return False
+    return visible_resolution(width, height) < 720
+
+
 def download_video(url: str, quality: int = 1080):
     url = normalize_url(url)
-    quality = min(int(quality), 720)
+    quality = min(int(quality), 1080)
     unique_id = str(uuid.uuid4())[:8]
 
     logger.info(f"Starting download | url={url} | quality={quality}")
 
     last_error = None
+    quality_ladder = build_quality_ladder(quality) if is_youtube_url(url) else [quality, quality, quality]
 
-    for attempt in range(1, 4):
+    for attempt, attempt_quality in enumerate(quality_ladder, start=1):
         try:
-            options = base_options(url, quality, unique_id)
+            options = base_options(url, attempt_quality, unique_id)
 
             if is_youtube_url(url):
-                if attempt == 1:
-                    options["format"] = build_format(url, quality)
-                elif attempt == 2:
-                    options["format"] = (
-                        f"best*[height<={quality}][ext=mp4]/"
-                        f"best*[height<={quality}]/"
-                        "best[ext=mp4]/"
-                        "best"
-                    )
-                else:
-                    options["format"] = "best[ext=mp4]/best"
+                options["format"] = build_format(url, attempt_quality)
 
             if is_tiktok_url(url):
                 options["extractor_args"] = tiktok_extractor_args(attempt)
@@ -222,7 +228,7 @@ def download_video(url: str, quality: int = 1080):
                     options["format"] = "best"
 
             with yt_dlp.YoutubeDL(options) as ydl:
-                logger.info(f"Attempt {attempt}/3")
+                logger.info("Attempt %s/%s | target_quality=%sp", attempt, len(quality_ladder), attempt_quality)
 
                 info = ydl.extract_info(url, download=True)
 
@@ -250,6 +256,15 @@ def download_video(url: str, quality: int = 1080):
 
                 width = info.get("width") or probed_width
                 height = info.get("height") or probed_height
+
+                if is_youtube_url(url) and is_youtube_quality_too_low(attempt_quality, width, height):
+                    try:
+                        Path(file_path).unlink(missing_ok=True)
+                    except Exception as cleanup_exc:
+                        logger.warning("Could not clean low-quality YouTube file %s: %s", file_path, cleanup_exc)
+                    raise RuntimeError(
+                        f"YouTube returned {width}x{height} for target {attempt_quality}p"
+                    )
 
                 logger.info(f"Success | file={file_path} | codec={codec} | size={width}x{height}")
 

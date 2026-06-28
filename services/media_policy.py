@@ -24,7 +24,7 @@ def get_known_file_size(video_info: dict) -> int | None:
 
 
 def choose_quality(requested_quality: int, video_info: dict | None) -> int:
-    quality = min(int(requested_quality), 720)
+    quality = min(int(requested_quality), 1080)
     return quality
 
 
