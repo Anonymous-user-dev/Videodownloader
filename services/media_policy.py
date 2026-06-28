@@ -1,5 +1,4 @@
 MEMORY_SAFE_QUALITY = 480
-MEMORY_SAFE_QUALITY_AFTER_SECONDS = 90
 MEMORY_SAFE_MAX_DURATION_SECONDS = 150
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
 
@@ -26,12 +25,6 @@ def get_known_file_size(video_info: dict) -> int | None:
 
 def choose_quality(requested_quality: int, video_info: dict | None) -> int:
     quality = min(int(requested_quality), 720)
-    if not video_info:
-        return min(quality, MEMORY_SAFE_QUALITY)
-
-    duration = video_info.get("duration")
-    if duration and duration >= MEMORY_SAFE_QUALITY_AFTER_SECONDS:
-        return min(quality, MEMORY_SAFE_QUALITY)
     return quality
 
 
