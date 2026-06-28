@@ -16,7 +16,7 @@ from services.media_policy import (
     should_lower_quality_for_size,
 )
 from services.telegram_sender import send_audio_sync, send_message_sync, send_video_sync
-from services.video_info import get_video_info, is_tiktok_url
+from services.video_info import get_video_info
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
@@ -55,10 +55,12 @@ def get_worker_video_info(url: str) -> dict | None:
         video_info = get_video_info(url)
 
     except Exception as exc:
-        if not is_tiktok_url(url):
-            raise
-
-        logger.warning("TikTok video info failed in worker; continuing without preflight: %s",exc,exc_info=True)
+        logger.warning(
+            "Video info failed in worker; continuing without preflight. url=%s error=%s",
+            url,
+            exc,
+            exc_info=True,
+        )
         return None
 
     logger.info(
