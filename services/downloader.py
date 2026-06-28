@@ -105,6 +105,7 @@ def base_options(url: str, quality: int, unique_id: str):
         "js_runtimes": {
             "node": {},
         },
+        "remote_components": ["ejs:github"],
     }
 
     cookie_path = get_cookie_path(url)

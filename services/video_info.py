@@ -41,6 +41,7 @@ def get_video_info(url: str):
         "js_runtimes": {
             "node": {},
         },
+        "remote_components": ["ejs:github"],
     }
 
     cookie_path = get_cookie_path(url)
