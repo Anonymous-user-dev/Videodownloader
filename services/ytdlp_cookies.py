@@ -28,7 +28,7 @@ def is_instagram_url(url: str) -> bool:
     return "instagram.com" in url
 
 
-def get_source_cookie_path(url: str) -> Path:
+def get_source_cookie_path(url: str) -> Path | None:
     if is_youtube_url(url):
         if settings.YOUTUBE_COOKIES_PATH:
             return Path(settings.YOUTUBE_COOKIES_PATH)
@@ -44,6 +44,10 @@ def get_source_cookie_path(url: str) -> Path:
             return Path(settings.INSTAGRAM_COOKIES_PATH)
         if DEFAULT_INSTAGRAM_COOKIES_PATH.exists():
             return DEFAULT_INSTAGRAM_COOKIES_PATH
+        logger.warning(
+            "No Instagram-specific cookies configured. Set INSTAGRAM_COOKIES_PATH for private or login-gated Instagram posts."
+        )
+        return None
 
     if settings.YTDLP_COOKIES_PATH:
         return Path(settings.YTDLP_COOKIES_PATH)
@@ -53,6 +57,9 @@ def get_source_cookie_path(url: str) -> Path:
 
 def get_cookie_path(url: str) -> str | None:
     source_path = get_source_cookie_path(url)
+
+    if source_path is None:
+        return None
 
     if not source_path.exists():
         logger.warning("yt-dlp cookies file not found: %s", source_path)
