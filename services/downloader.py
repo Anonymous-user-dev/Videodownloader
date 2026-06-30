@@ -4,6 +4,7 @@ import uuid
 import logging
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from services.media_probe import is_audio_file, probe_video
 from services.tiktok_direct import download_tiktok_video_direct
 from services.tiktok_ytdlp import tiktok_extractor_args
@@ -39,6 +40,11 @@ def normalize_url(url: str) -> str:
             return url.split("?")[0]
         return url
 
+    if "instagram.com" in url:
+        parsed = urlsplit(url)
+        path = parsed.path.rstrip("/") + "/"
+        return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
     return url
 
 
@@ -48,6 +54,10 @@ def is_youtube_url(url: str) -> bool:
 
 def is_tiktok_url(url: str) -> bool:
     return "tiktok.com" in url
+
+
+def is_instagram_url(url: str) -> bool:
+    return "instagram.com" in url
 
 
 def build_format(url: str, quality: int) -> str:
@@ -70,7 +80,7 @@ def build_format(url: str, quality: int) -> str:
             "best"
         )
 
-    if "instagram.com" in url:
+    if is_instagram_url(url):
         return (
             f"bestvideo[height<={quality}][ext=mp4][vcodec^=avc]+"
             f"bestaudio[ext=m4a]/best[height<={quality}]/best"
@@ -83,7 +93,7 @@ def build_format(url: str, quality: int) -> str:
     )
 
 
-def base_options(url: str, quality: int, unique_id: str):
+def base_options(url: str, quality: int, unique_id: str, use_cookies: bool = True):
     options = {
         "outtmpl": str(DOWNLOAD_DIR / f"%(title)s_{unique_id}.%(ext)s"),
         "merge_output_format": "mp4",
@@ -103,10 +113,12 @@ def base_options(url: str, quality: int, unique_id: str):
         "remote_components": ["ejs:github"],
     }
 
-    cookie_path = get_cookie_path(url)
+    cookie_path = get_cookie_path(url) if use_cookies else None
     if cookie_path:
         options["cookiefile"] = cookie_path
-        logger.info(f"Using yt-dlp cookies from: {cookie_path}")
+        logger.info("Using yt-dlp cookies from: %s", cookie_path)
+    elif not use_cookies:
+        logger.info("Skipping yt-dlp cookies for this attempt")
     else:
         logger.warning("No yt-dlp cookies are being used")
 
@@ -132,6 +144,18 @@ def base_options(url: str, quality: int, unique_id: str):
             ),
             "Referer": "https://www.tiktok.com/",
             "Accept-Language": "en-US,en;q=0.9",
+        }
+
+    if is_instagram_url(url):
+        options["http_headers"] = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.instagram.com/",
+            "Accept-Language": "en-US,en;q=0.9",
+            "X-IG-App-ID": "936619743392459",
         }
 
     return options
@@ -213,7 +237,8 @@ def download_video(url: str, quality: int = 1080):
 
     for attempt, attempt_quality in enumerate(quality_ladder, start=1):
         try:
-            options = base_options(url, attempt_quality, unique_id)
+            use_cookies = not (is_instagram_url(url) and attempt == 2)
+            options = base_options(url, attempt_quality, unique_id, use_cookies=use_cookies)
 
             if is_youtube_url(url):
                 options["format"] = build_format(url, attempt_quality)
