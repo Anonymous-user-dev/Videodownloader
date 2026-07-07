@@ -60,6 +60,10 @@ def is_instagram_url(url: str) -> bool:
     return "instagram.com" in url
 
 
+def is_video_platform_url(url: str) -> bool:
+    return is_youtube_url(url) or is_tiktok_url(url) or is_instagram_url(url)
+
+
 def build_format(url: str, quality: int) -> str:
     if is_youtube_url(url):
         return (
@@ -75,20 +79,28 @@ def build_format(url: str, quality: int) -> str:
     if is_tiktok_url(url):
         return (
             "best[format_id^=h264][ext=mp4]/"
-            f"best[ext=mp4][height<={quality}]/"
             "best[ext=mp4]/"
             "best"
         )
 
     if is_instagram_url(url):
         return (
-            f"bestvideo[height<={quality}][ext=mp4][vcodec^=avc]+"
-            f"bestaudio[ext=m4a]/best[height<={quality}]/best"
+            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo+bestaudio/"
+            "best*[vcodec!=none][acodec!=none][ext=mp4]/"
+            "best*[vcodec!=none][acodec!=none]/"
+            "best[ext=mp4]/"
+            "best"
         )
 
     return (
-        f"bestvideo*[height<={quality}]+bestaudio/"
-        f"best*[height<={quality}]/"
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+        "bestvideo+bestaudio/"
+        "best*[vcodec!=none][acodec!=none][ext=mp4]/"
+        "best*[vcodec!=none][acodec!=none]/"
+        "best[ext=mp4]/"
         "best"
     )
 
@@ -122,9 +134,11 @@ def base_options(url: str, quality: int, unique_id: str, use_cookies: bool = Tru
     else:
         logger.warning("No yt-dlp cookies are being used")
 
-    if is_youtube_url(url):
+    if is_youtube_url(url) or is_instagram_url(url):
         options["format_sort"] = [f"res:{quality}", "ext:mp4:m4a"]
         options["format_sort_force"] = True
+
+    if is_youtube_url(url):
         options["http_headers"] = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -135,6 +149,8 @@ def base_options(url: str, quality: int, unique_id: str, use_cookies: bool = Tru
         }
 
     if is_tiktok_url(url):
+        options["format_sort"] = [f"res:{quality}", "ext:mp4:m4a"]
+        options["format_sort_force"] = True
         options["extractor_args"] = tiktok_extractor_args()
         options["http_headers"] = {
             "User-Agent": (
@@ -219,7 +235,7 @@ def visible_resolution(width: int | None, height: int | None) -> int:
     return min(width, height)
 
 
-def is_youtube_quality_too_low(target_quality: int, width: int | None, height: int | None) -> bool:
+def is_video_quality_too_low(target_quality: int, width: int | None, height: int | None) -> bool:
     if target_quality < 720:
         return False
     return visible_resolution(width, height) < 720
@@ -233,7 +249,7 @@ def download_video(url: str, quality: int = 1080):
     logger.info(f"Starting download | url={url} | quality={quality}")
 
     last_error = None
-    quality_ladder = build_quality_ladder(quality) if is_youtube_url(url) else [quality, quality, quality]
+    quality_ladder = build_quality_ladder(quality)
 
     for attempt, attempt_quality in enumerate(quality_ladder, start=1):
         try:
@@ -275,6 +291,13 @@ def download_video(url: str, quality: int = 1080):
                                 video_path, width, height = direct_result
                                 return video_path, width, height, "video"
 
+                        if is_video_platform_url(url):
+                            try:
+                                Path(file_path).unlink(missing_ok=True)
+                            except Exception as cleanup_exc:
+                                logger.warning("Could not clean audio-only video-platform file %s: %s", file_path, cleanup_exc)
+                            raise RuntimeError(f"Audio-only download selected for video URL: {url}")
+
                         logger.info("Downloaded audio-only media: %s", file_path)
                         return file_path, 0, 0, "audio"
                     raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
@@ -282,13 +305,13 @@ def download_video(url: str, quality: int = 1080):
                 width = info.get("width") or probed_width
                 height = info.get("height") or probed_height
 
-                if is_youtube_url(url) and is_youtube_quality_too_low(attempt_quality, width, height):
+                if is_video_quality_too_low(attempt_quality, width, height):
                     try:
                         Path(file_path).unlink(missing_ok=True)
                     except Exception as cleanup_exc:
-                        logger.warning("Could not clean low-quality YouTube file %s: %s", file_path, cleanup_exc)
+                        logger.warning("Could not clean low-quality file %s: %s", file_path, cleanup_exc)
                     raise RuntimeError(
-                        f"YouTube returned {width}x{height} for target {attempt_quality}p"
+                        f"Downloaded video is only {width}x{height} for target {attempt_quality}p"
                     )
 
                 logger.info(f"Success | file={file_path} | codec={codec} | size={width}x{height}")
