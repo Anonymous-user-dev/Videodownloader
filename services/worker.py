@@ -81,22 +81,19 @@ def safe_send_message(chat_id: int, text: str) -> None:
         logger.warning("Could not send Telegram message: %s", exc, exc_info=True)
 
 
-def download_failure_message(exc: Exception) -> str:
-    error_text = str(exc).lower()
+def short_request_id(request_id: str | None) -> str:
+    if not request_id:
+        return "unknown"
 
-    if "instagram" in error_text and (
-        "registered users" in error_text
-        or "not granting access" in error_text
-        or "login" in error_text
-        or "cookies" in error_text
-    ):
-        return (
-            "Instagram blocked this reel for the current cookie account.\n\n"
-            "Refresh Instagram cookies from a logged-in account that can open this exact reel, "
-            "then update the Render secret file."
-        )
+    return request_id.split("-")[0]
 
-    return "Download failed. The link may be unsupported, private, too large, or blocked by the platform."
+
+def download_failure_message(request_id: str) -> str:
+    return (
+        "Download failed. This link may be private, unavailable, too large, "
+        "or temporarily blocked by the platform.\n\n"
+        f"Reference: {request_id}"
+    )
 
 
 def send_download_started_message(chat_id: int, file_size: int | None) -> None:
@@ -133,7 +130,14 @@ def download_and_validate(url: str, quality: int):
 
 @app.task(rate_limit="6/m", bind=True, max_retries=2)
 def video_procedure(self, url, chat_id, user_id, quality=1080):
-    logger.info("Worker started. user_id=%s chat_id=%s requested_quality=%sp",user_id,chat_id,quality)
+    request_id = short_request_id(getattr(self.request, "id", None))
+    logger.info(
+        "Worker started. request_id=%s user_id=%s chat_id=%s requested_quality=%sp",
+        request_id,
+        user_id,
+        chat_id,
+        quality,
+    )
 
     file_path = None
 
@@ -217,9 +221,15 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
             logger.info("Video sent successfully. chat_id=%s", chat_id)
 
     except Exception as exc:
-        logger.exception("Worker failed. user_id=%s chat_id=%s quality=%s",user_id,chat_id,quality)
+        logger.exception(
+            "Worker failed. request_id=%s user_id=%s chat_id=%s quality=%s",
+            request_id,
+            user_id,
+            chat_id,
+            quality,
+        )
 
-        safe_send_message(chat_id, download_failure_message(exc))
+        safe_send_message(chat_id, download_failure_message(request_id))
 
     finally:
         remove_file(file_path)

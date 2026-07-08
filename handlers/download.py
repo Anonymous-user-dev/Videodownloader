@@ -32,8 +32,6 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"Rate limited. Retry in {retry_after}s")
         return
 
-    await update.message.reply_text("Request received. Added to the download queue...")
-
     try:
         async with SessionLocal() as db:
             user = await get_or_create_user(
@@ -45,6 +43,11 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
         task = video_procedure.delay(url, chat_id, user_id)
         logger.info("Video task queued. task_id=%s user_id=%s chat_id=%s", task.id, user_id, chat_id)
+        request_id = task.id.split("-")[0]
+
+        await update.message.reply_text(
+            f"Request received. Added to the download queue.\n\nReference: {request_id}"
+        )
 
     except Exception:
         logger.exception("Error queueing video request")
@@ -130,10 +133,6 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
             )
             await save_download(user_id=user.id, link=original_url, db=db)
 
-        await query.edit_message_text(
-            f"Downloading video in {quality}p quality... Please wait."
-        )
-
         task = video_procedure.delay(original_url, chat_id, user_id, quality)
         logger.info(
             "Video task queued. task_id=%s quality=%s user_id=%s chat_id=%s",
@@ -141,6 +140,11 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
             quality,
             user_id,
             chat_id,
+        )
+        request_id = task.id.split("-")[0]
+
+        await query.edit_message_text(
+            f"Download queued in {quality}p quality.\n\nReference: {request_id}"
         )
 
     except Exception:
