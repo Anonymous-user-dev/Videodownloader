@@ -238,7 +238,7 @@ def visible_resolution(width: int | None, height: int | None) -> int:
 def is_video_quality_too_low(target_quality: int, width: int | None, height: int | None) -> bool:
     if target_quality < 720:
         return False
-    return visible_resolution(width, height) < 720
+    return visible_resolution(width, height) < 540
 
 
 def download_video(url: str, quality: int = 1080):
