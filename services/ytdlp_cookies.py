@@ -14,6 +14,7 @@ DEFAULT_TIKTOK_COOKIES_PATH = BASE_DIR / "tiktok_cookies.txt"
 DEFAULT_INSTAGRAM_COOKIES_PATH = BASE_DIR / "instagram_cookies.txt"
 
 RUNTIME_DIR = Path("/tmp")
+INSTAGRAM_AUTH_COOKIE_NAMES = {"sessionid", "ds_user_id"}
 
 
 def is_youtube_url(url: str) -> bool:
@@ -28,6 +29,105 @@ def is_instagram_url(url: str) -> bool:
     return "instagram.com" in url
 
 
+def cookie_names_for_domain(path: Path, domain_fragment: str) -> set[str]:
+    names: set[str] = set()
+
+    try:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+
+            if not line or line.startswith("#") and not line.startswith("#HttpOnly_"):
+                continue
+
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+
+            domain = parts[0].removeprefix("#HttpOnly_")
+            if domain_fragment not in domain:
+                continue
+
+            names.add(parts[5])
+
+    except Exception as exc:
+        logger.warning("Could not inspect cookies file %s: %s", path, exc, exc_info=True)
+
+    return names
+
+
+def has_instagram_auth_cookies(path: Path) -> bool:
+    names = cookie_names_for_domain(path, "instagram.com")
+    missing = sorted(INSTAGRAM_AUTH_COOKIE_NAMES - names)
+
+    if missing:
+        logger.warning(
+            "Instagram cookies file is missing auth cookies. path=%s size=%s missing=%s found=%s",
+            path,
+            path.stat().st_size if path.exists() else "missing",
+            ",".join(missing),
+            ",".join(sorted(names)) or "none",
+        )
+        return False
+
+    logger.info(
+        "Instagram cookies file contains required auth cookies. path=%s found=%s",
+        path,
+        ",".join(sorted(names)),
+    )
+    return True
+
+
+def instagram_cookie_candidates() -> list[Path]:
+    candidates = []
+
+    if settings.INSTAGRAM_COOKIES_PATH:
+        candidates.append(Path(settings.INSTAGRAM_COOKIES_PATH))
+
+    candidates.append(DEFAULT_INSTAGRAM_COOKIES_PATH)
+
+    if settings.YTDLP_COOKIES_PATH:
+        candidates.append(Path(settings.YTDLP_COOKIES_PATH))
+
+    candidates.append(DEFAULT_COOKIES_PATH)
+
+    unique_candidates = []
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_candidates.append(candidate)
+
+    return unique_candidates
+
+
+def get_instagram_cookie_path() -> Path | None:
+    existing_candidates = []
+
+    for candidate in instagram_cookie_candidates():
+        if not candidate.exists():
+            logger.warning("Instagram cookies candidate not found: %s", candidate)
+            continue
+
+        existing_candidates.append(candidate)
+
+        if has_instagram_auth_cookies(candidate):
+            return candidate
+
+    if existing_candidates:
+        logger.warning(
+            "No Instagram cookie file with sessionid and ds_user_id was found. "
+            "Using first existing candidate anyway; private/follow-gated reels may fail."
+        )
+        return existing_candidates[0]
+
+    logger.warning(
+        "No Instagram cookies configured. Set INSTAGRAM_COOKIES_PATH for private or login-gated Instagram posts."
+    )
+    return None
+
+
 def get_source_cookie_path(url: str) -> Path | None:
     if is_youtube_url(url):
         if settings.YOUTUBE_COOKIES_PATH:
@@ -40,14 +140,7 @@ def get_source_cookie_path(url: str) -> Path | None:
         return DEFAULT_TIKTOK_COOKIES_PATH
 
     if is_instagram_url(url):
-        if settings.INSTAGRAM_COOKIES_PATH:
-            return Path(settings.INSTAGRAM_COOKIES_PATH)
-        if DEFAULT_INSTAGRAM_COOKIES_PATH.exists():
-            return DEFAULT_INSTAGRAM_COOKIES_PATH
-        logger.warning(
-            "No Instagram-specific cookies configured. Set INSTAGRAM_COOKIES_PATH for private or login-gated Instagram posts."
-        )
-        return None
+        return get_instagram_cookie_path()
 
     if settings.YTDLP_COOKIES_PATH:
         return Path(settings.YTDLP_COOKIES_PATH)

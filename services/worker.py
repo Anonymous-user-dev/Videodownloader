@@ -81,6 +81,24 @@ def safe_send_message(chat_id: int, text: str) -> None:
         logger.warning("Could not send Telegram message: %s", exc, exc_info=True)
 
 
+def download_failure_message(exc: Exception) -> str:
+    error_text = str(exc).lower()
+
+    if "instagram" in error_text and (
+        "registered users" in error_text
+        or "not granting access" in error_text
+        or "login" in error_text
+        or "cookies" in error_text
+    ):
+        return (
+            "Instagram blocked this reel for the current cookie account.\n\n"
+            "Refresh Instagram cookies from a logged-in account that can open this exact reel, "
+            "then update the Render secret file."
+        )
+
+    return "Download failed. The link may be unsupported, private, too large, or blocked by the platform."
+
+
 def send_download_started_message(chat_id: int, file_size: int | None) -> None:
     if file_size:
         safe_send_message(chat_id,f"Downloading video ({format_file_size(file_size)})...")
@@ -198,10 +216,10 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
             send_video_sync(chat_id, file_path, width, height)
             logger.info("Video sent successfully. chat_id=%s", chat_id)
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Worker failed. user_id=%s chat_id=%s quality=%s",user_id,chat_id,quality)
 
-        safe_send_message(chat_id,"Download failed. The link may be unsupported, private, too large, or blocked by the platform.")
+        safe_send_message(chat_id, download_failure_message(exc))
 
     finally:
         remove_file(file_path)
