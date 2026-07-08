@@ -24,7 +24,7 @@ A Telegram bot that downloads videos from YouTube, TikTok, and Instagram and sen
 1. Clone the repo
 2. Create a virtual environment and install dependencies:
 pip install -r requirements.txt
-3. Copy `.env.example` to `.env` and fill in your values
+3. Copy `.env.example` to `.env` and fill in your values 
 4. Run migrations:
 alembic upgrade head
 5. Start the Celery worker:
