@@ -5,7 +5,7 @@ import logging
 import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
-from services.media_probe import is_audio_file, probe_video
+from services.media_probe import has_audio_stream, is_audio_file, probe_video
 from services.tiktok_direct import download_tiktok_video_direct
 from services.tiktok_ytdlp import tiktok_extractor_args
 from services.ytdlp_cookies import get_cookie_path
@@ -85,13 +85,13 @@ def build_format(url: str, quality: int) -> str:
 
     if is_instagram_url(url):
         return (
+            "best*[vcodec!=none][acodec!=none][ext=mp4]/"
+            "best*[vcodec!=none][acodec!=none]/"
+            "best[ext=mp4]/"
             "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
             "bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/"
             "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
             "bestvideo+bestaudio/"
-            "best*[vcodec!=none][acodec!=none][ext=mp4]/"
-            "best*[vcodec!=none][acodec!=none]/"
-            "best[ext=mp4]/"
             "best"
         )
 
@@ -301,6 +301,13 @@ def download_video(url: str, quality: int = 1080):
                         logger.info("Downloaded audio-only media: %s", file_path)
                         return file_path, 0, 0, "audio"
                     raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
+
+                if is_video_platform_url(url) and not has_audio_stream(file_path):
+                    try:
+                        Path(file_path).unlink(missing_ok=True)
+                    except Exception as cleanup_exc:
+                        logger.warning("Could not clean muted video-platform file %s: %s", file_path, cleanup_exc)
+                    raise RuntimeError(f"Downloaded video has no audio stream: {url}")
 
                 width = info.get("width") or probed_width
                 height = info.get("height") or probed_height
