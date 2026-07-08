@@ -45,6 +45,7 @@ app.conf.update(
     worker_hijack_root_logger=False,
     worker_redirect_stdouts=True,
     worker_redirect_stdouts_level="INFO",
+    worker_prefetch_multiplier=1,
     task_time_limit=300,
     task_soft_time_limit=240,
 )
@@ -112,7 +113,7 @@ def download_and_validate(url: str, quality: int):
     return file_path, width, height, media_type, size
 
 
-@app.task(rate_limit="3/m", bind=True, max_retries=2)
+@app.task(rate_limit="6/m", bind=True, max_retries=2)
 def video_procedure(self, url, chat_id, user_id, quality=1080):
     logger.info("Worker started. user_id=%s chat_id=%s requested_quality=%sp",user_id,chat_id,quality)
 

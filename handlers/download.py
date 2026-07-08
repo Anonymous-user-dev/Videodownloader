@@ -32,7 +32,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(f"Rate limited. Retry in {retry_after}s")
         return
 
-    await update.message.reply_text("Request received. Preparing download...")
+    await update.message.reply_text("Request received. Added to the download queue...")
 
     try:
         async with SessionLocal() as db:
