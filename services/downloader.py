@@ -64,36 +64,65 @@ def is_video_platform_url(url: str) -> bool:
     return is_youtube_url(url) or is_tiktok_url(url) or is_instagram_url(url)
 
 
+def minimum_acceptable_resolution(quality: int) -> int:
+    if quality >= 720:
+        return 540
+    if quality >= 480:
+        return 450
+    return 0
+
+
+def build_social_format(quality: int) -> str:
+    min_width = minimum_acceptable_resolution(quality)
+    high_quality_formats = []
+
+    if min_width:
+        high_quality_formats = [
+            f"best*[vcodec!=none][acodec!=none][ext=mp4][width>={min_width}]",
+            f"best*[vcodec!=none][acodec!=none][width>={min_width}]",
+            f"bestvideo[ext=mp4][width>={min_width}]+bestaudio[ext=m4a]",
+            f"bestvideo[width>={min_width}]+bestaudio",
+        ]
+
+    fallback_formats = [
+        "best*[vcodec!=none][acodec!=none][ext=mp4]",
+        "best*[vcodec!=none][acodec!=none]",
+        "best[ext=mp4]",
+        "best",
+    ]
+
+    return "/".join(high_quality_formats + fallback_formats)
+
+
+def build_youtube_format(quality: int) -> str:
+    return (
+        f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[width<={quality}][ext=mp4]+bestaudio[ext=m4a]/"
+        f"bestvideo[height<={quality}]+bestaudio/"
+        f"bestvideo[width<={quality}]+bestaudio/"
+        f"best*[vcodec!=none][acodec!=none][height<={quality}][ext=mp4]/"
+        f"best*[vcodec!=none][acodec!=none][width<={quality}][ext=mp4]/"
+        f"best*[vcodec!=none][acodec!=none][height<={quality}]/"
+        f"best*[vcodec!=none][acodec!=none][width<={quality}]/"
+        "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+        "bestvideo+bestaudio/"
+        "best*[vcodec!=none][acodec!=none][ext=mp4]/"
+        "best*[vcodec!=none][acodec!=none]/"
+        "best[ext=mp4]/"
+        "best"
+    )
+
+
 def build_format(url: str, quality: int) -> str:
     if is_youtube_url(url):
-        return (
-            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo+bestaudio/"
-            "best*[vcodec!=none][acodec!=none][ext=mp4]/"
-            "best*[vcodec!=none][acodec!=none]/"
-            "best[ext=mp4]/"
-            "best"
-        )
+        return build_youtube_format(quality)
 
     if is_tiktok_url(url):
-        return (
-            "best[format_id^=h264][ext=mp4]/"
-            "best[ext=mp4]/"
-            "best"
-        )
+        return build_social_format(quality)
 
     if is_instagram_url(url):
-        return (
-            "best*[vcodec!=none][acodec!=none][ext=mp4]/"
-            "best*[vcodec!=none][acodec!=none]/"
-            "best[ext=mp4]/"
-            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo+bestaudio/"
-            "best"
-        )
+        return build_social_format(quality)
 
     return (
         "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
@@ -134,8 +163,8 @@ def base_options(url: str, quality: int, unique_id: str, use_cookies: bool = Tru
     else:
         logger.warning("No yt-dlp cookies are being used")
 
-    if is_youtube_url(url) or is_instagram_url(url):
-        options["format_sort"] = [f"res:{quality}", "ext:mp4:m4a"]
+    if is_video_platform_url(url):
+        options["format_sort"] = [f"res:{quality}", "fps", "tbr", "filesize", "ext:mp4:m4a"]
         options["format_sort_force"] = True
 
     if is_youtube_url(url):
@@ -149,8 +178,6 @@ def base_options(url: str, quality: int, unique_id: str, use_cookies: bool = Tru
         }
 
     if is_tiktok_url(url):
-        options["format_sort"] = [f"res:{quality}", "ext:mp4:m4a"]
-        options["format_sort_force"] = True
         options["extractor_args"] = tiktok_extractor_args()
         options["http_headers"] = {
             "User-Agent": (
@@ -236,9 +263,10 @@ def visible_resolution(width: int | None, height: int | None) -> int:
 
 
 def is_video_quality_too_low(target_quality: int, width: int | None, height: int | None) -> bool:
-    if target_quality < 720:
+    minimum_resolution = minimum_acceptable_resolution(target_quality)
+    if not minimum_resolution:
         return False
-    return visible_resolution(width, height) < 540
+    return visible_resolution(width, height) < minimum_resolution
 
 
 def download_video(url: str, quality: int = 1080):
@@ -261,12 +289,7 @@ def download_video(url: str, quality: int = 1080):
 
             if is_tiktok_url(url):
                 options["extractor_args"] = tiktok_extractor_args(attempt)
-                if attempt == 1:
-                    options["format"] = "best[format_id^=h264][ext=mp4]/best[ext=mp4]"
-                elif attempt == 2:
-                    options["format"] = "best[ext=mp4]/best"
-                else:
-                    options["format"] = "best"
+                options["format"] = build_format(url, attempt_quality)
 
             with yt_dlp.YoutubeDL(options) as ydl:
                 logger.info("Attempt %s/%s | target_quality=%sp", attempt, len(quality_ladder), attempt_quality)
@@ -284,11 +307,20 @@ def download_video(url: str, quality: int = 1080):
                         if is_tiktok_url(url):
                             direct_result = try_tiktok_direct_video(url, unique_id)
                             if direct_result:
+                                video_path, width, height = direct_result
+                                if is_video_quality_too_low(attempt_quality, width, height):
+                                    try:
+                                        Path(video_path).unlink(missing_ok=True)
+                                    except Exception as cleanup_exc:
+                                        logger.warning("Could not clean low-quality TikTok direct file %s: %s", video_path, cleanup_exc)
+                                    raise RuntimeError(
+                                        f"TikTok direct fallback is only {width}x{height} for target {attempt_quality}p"
+                                    )
+
                                 try:
                                     Path(file_path).unlink(missing_ok=True)
                                 except Exception as cleanup_exc:
                                     logger.warning("Could not clean yt-dlp audio fallback %s: %s", file_path, cleanup_exc)
-                                video_path, width, height = direct_result
                                 return video_path, width, height, "video"
 
                         if is_video_platform_url(url):
