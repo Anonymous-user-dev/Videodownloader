@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi.responses import JSONResponse
 from telegram import Update
 from bot import create_application
 from config import settings
 import logging
 from services.logging_config import configure_logging
+from services.health import readiness_report
 
 configure_logging(settings.APP_ENV)
 
@@ -46,6 +48,17 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/health/live")
+async def health_live():
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    report, status_code = await readiness_report()
+    return JSONResponse(content=report, status_code=status_code)
 
 
 @app.post("/webhook/telegram")

@@ -200,6 +200,7 @@ For 512 MB memory plans, keep worker concurrency conservative. `--pool=solo` or 
 - Each queued download gets a short reference id that appears in both Telegram messages and worker logs.
 - Production logs are JSON with request, platform, user, chat, quality, attempt, and duration fields where available.
 - PostgreSQL tracks each request through `queued`, `started`, `downloading`, `uploading`, and terminal `sent` or `failed` states.
+- `/health/live` checks the web process; `/health/ready` checks PostgreSQL, Redis, RabbitMQ, FFmpeg, ffprobe, and Node.
 
 ## Troubleshooting
 
@@ -242,5 +243,6 @@ Requests appear stuck:
 - `services/ytdlp_cookies.py`: platform-specific cookie selection and diagnostics.
 - `services/telegram_sender.py`: synchronous Telegram API upload helpers.
 - `services/rate_limit.py`: Redis token bucket.
+- `services/health.py`: liveness/readiness dependency checks.
 - `services/user_service.py`: database user/download records.
 - `database.py`, `model.py`, `alembic/`: database configuration and migrations.
