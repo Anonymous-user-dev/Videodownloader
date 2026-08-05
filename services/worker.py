@@ -2,7 +2,7 @@ from celery import Celery
 from celery.signals import setup_logging
 import os
 import logging
-import sys
+import time
 
 from config import settings
 from services.downloader import download_video
@@ -15,29 +15,19 @@ from services.media_policy import (
     is_too_long_for_worker,
     should_lower_quality_for_size,
 )
+from services.logging_config import configure_logging, log_context, platform_from_url
 from services.telegram_sender import send_audio_sync, send_message_sync, send_video_sync
 from services.video_info import get_video_info
-
-LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
 logger = logging.getLogger(__name__)
 
 
-def configure_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format=LOG_FORMAT,
-        stream=sys.stdout,
-        force=True,
-    )
-
-
 @setup_logging.connect
 def configure_celery_logging(**kwargs) -> None:
-    configure_logging()
+    configure_logging(settings.APP_ENV)
 
 
-configure_logging()
+configure_logging(settings.APP_ENV)
 
 app = Celery("tasks", broker=settings.RABBITMQ_HOST)
 
@@ -131,105 +121,127 @@ def download_and_validate(url: str, quality: int):
 @app.task(rate_limit="6/m", bind=True, max_retries=2)
 def video_procedure(self, url, chat_id, user_id, quality=1080):
     request_id = short_request_id(getattr(self.request, "id", None))
-    logger.info(
-        "Worker started. request_id=%s user_id=%s chat_id=%s requested_quality=%sp",
-        request_id,
-        user_id,
-        chat_id,
-        quality,
-    )
+    started_at = time.monotonic()
 
-    file_path = None
+    with log_context(
+        request_id=request_id,
+        platform=platform_from_url(url),
+        user_id=user_id,
+        chat_id=chat_id,
+        quality=quality,
+    ):
+        logger.info("Worker started")
+        file_path = None
 
-    try:
-        video_info = get_worker_video_info(url)
-        info_size = None
+        try:
+            video_info = get_worker_video_info(url)
+            info_size = None
 
-        if video_info:
-            if is_too_long_for_worker(video_info):
-                logger.info("Video rejected because it is too long. duration=%s user_id=%s",video_info.get("duration"),user_id)
+            if video_info:
+                if is_too_long_for_worker(video_info):
+                    logger.info(
+                        "Video rejected because it is too long. duration=%s",
+                        video_info.get("duration"),
+                    )
+                    safe_send_message(
+                        chat_id,
+                        "This video is too long for the current server limit.\n\n"
+                        "Please send a video around 2 minutes or shorter.",
+                    )
+                    return
 
-                safe_send_message(chat_id,
-                    "This video is too long for the current server limit.\n\n"
-                    "Please send a video around 2 minutes or shorter.")
-                return
+                info_size = get_known_file_size(video_info)
 
-            info_size = get_known_file_size(video_info)
+                if should_lower_quality_for_size(video_info, quality):
+                    logger.info(
+                        "Preflight size is too large. Lowering quality to %sp",
+                        MEMORY_SAFE_QUALITY,
+                    )
+                    quality = MEMORY_SAFE_QUALITY
 
-            if should_lower_quality_for_size(video_info, quality):
-                logger.info("Preflight size is too large. Lowering quality to %sp",MEMORY_SAFE_QUALITY)
-                quality = MEMORY_SAFE_QUALITY
+            quality = choose_quality(quality, video_info)
+            send_download_started_message(chat_id, info_size)
 
-        quality = choose_quality(quality, video_info)
+            file_path, width, height, media_type, size = download_and_validate(url, quality)
+            size_mb = size / (1024 * 1024)
 
-        send_download_started_message(chat_id, info_size)
-
-        file_path, width, height, media_type, size = download_and_validate(url, quality)
-
-        size_mb = size / (1024 * 1024)
-
-        logger.info(
-            "Download finished. size=%.2fMB quality=%sp media_type=%s",
-            size_mb,
-            quality,
-            media_type)
-
-        if size > MAX_TELEGRAM_FILE_SIZE:
-            logger.warning(
-                "File too large. size=%.2fMB limit=%.2fMB quality=%sp",
+            logger.info(
+                "Download finished. size=%.2fMB media_type=%s",
                 size_mb,
-                MAX_TELEGRAM_FILE_SIZE / (1024 * 1024),
-                quality)
+                media_type,
+                extra={"quality": quality},
+            )
 
-            remove_file(file_path)
-            file_path = None
+            if size > MAX_TELEGRAM_FILE_SIZE:
+                logger.warning(
+                    "File too large. size=%.2fMB limit=%.2fMB",
+                    size_mb,
+                    MAX_TELEGRAM_FILE_SIZE / (1024 * 1024),
+                    extra={"quality": quality},
+                )
 
-            retry_qualities = [720, 480] if quality > 720 else [480]
-            retry_qualities = [item for item in retry_qualities if item < quality]
-
-            for lower_quality in retry_qualities:
-                safe_send_message(chat_id,f"File is too large. Retrying at {lower_quality}p...")
-
-                logger.info("Retrying inside same task with quality=%sp", lower_quality)
-
-                file_path, width, height, media_type, size = download_and_validate(url,lower_quality)
-                size_mb = size / (1024 * 1024)
-
-                if size <= MAX_TELEGRAM_FILE_SIZE:
-                    quality = lower_quality
-                    break
-
-                logger.warning("File still too large after retry. size=%.2fMB quality=%sp",size_mb,lower_quality)
                 remove_file(file_path)
                 file_path = None
+
+                retry_qualities = [720, 480] if quality > 720 else [480]
+                retry_qualities = [item for item in retry_qualities if item < quality]
+
+                for lower_quality in retry_qualities:
+                    safe_send_message(
+                        chat_id,
+                        f"File is too large. Retrying at {lower_quality}p...",
+                    )
+                    logger.info(
+                        "Retrying oversized download",
+                        extra={"quality": lower_quality},
+                    )
+
+                    file_path, width, height, media_type, size = download_and_validate(
+                        url, lower_quality
+                    )
+                    size_mb = size / (1024 * 1024)
+
+                    if size <= MAX_TELEGRAM_FILE_SIZE:
+                        quality = lower_quality
+                        break
+
+                    logger.warning(
+                        "File still too large after retry. size=%.2fMB",
+                        size_mb,
+                        extra={"quality": lower_quality},
+                    )
+                    remove_file(file_path)
+                    file_path = None
+                else:
+                    safe_send_message(
+                        chat_id,
+                        f"Video is still too large ({size_mb:.1f}MB) even at 480p.\n\n"
+                        "Telegram allows a limited file size. Please try a shorter video.",
+                    )
+                    return
+
+            if media_type == "audio":
+                logger.info("Sending audio. size=%.2fMB", size_mb)
+                send_audio_sync(chat_id, file_path)
+                logger.info("Audio sent successfully")
             else:
-                safe_send_message(chat_id,
-                    f"Video is still too large ({size_mb:.1f}MB) even at 480p.\n\n"
-                    "Telegram allows a limited file size. Please try a shorter video.")
-                return
+                logger.info(
+                    "Sending video. size=%.2fMB width=%s height=%s",
+                    size_mb,
+                    width,
+                    height,
+                )
+                send_video_sync(chat_id, file_path, width, height)
+                logger.info("Video sent successfully")
 
-        if media_type == "audio":
-            logger.info("Sending audio. chat_id=%s size=%.2fMB",chat_id,size_mb)
+        except Exception:
+            logger.exception("Worker failed")
 
-            send_audio_sync(chat_id, file_path)
-            logger.info("Audio sent successfully. chat_id=%s", chat_id)
+            safe_send_message(chat_id, download_failure_message(request_id))
 
-        else:
-            logger.info("Sending video. chat_id=%s size=%.2fMB width=%s height=%s",chat_id,size_mb,width,height)
-
-            send_video_sync(chat_id, file_path, width, height)
-            logger.info("Video sent successfully. chat_id=%s", chat_id)
-
-    except Exception as exc:
-        logger.exception(
-            "Worker failed. request_id=%s user_id=%s chat_id=%s quality=%s",
-            request_id,
-            user_id,
-            chat_id,
-            quality,
-        )
-
-        safe_send_message(chat_id, download_failure_message(request_id))
-
-    finally:
-        remove_file(file_path)
+        finally:
+            remove_file(file_path)
+            logger.info(
+                "Worker finished",
+                extra={"duration_ms": round((time.monotonic() - started_at) * 1000)},
+            )

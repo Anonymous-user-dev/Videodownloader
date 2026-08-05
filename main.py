@@ -3,16 +3,9 @@ from telegram import Update
 from bot import create_application
 from config import settings
 import logging
+from services.logging_config import configure_logging
 
-logging.basicConfig(
-    level=logging.DEBUG if settings.APP_ENV == "development" else logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
-
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("telegram").setLevel(logging.WARNING)
-logging.getLogger("telegram.ext").setLevel(logging.INFO)
+configure_logging(settings.APP_ENV)
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,7 @@ from services.worker import video_procedure
 from services.rate_limit import check_rate_limit
 import json
 import logging
+from services.logging_config import log_context, platform_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,16 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
-    logger.info("Received video request from user_id=%s chat_id=%s", user_id, chat_id)
+    with log_context(
+        platform=platform_from_url(url),
+        user_id=user_id,
+        chat_id=chat_id,
+    ):
+        await _queue_video_request(update, url, chat_id, user_id)
+
+
+async def _queue_video_request(update: Update, url: str, chat_id: int, user_id: int) -> None:
+    logger.info("Received video request")
 
     allowed, retry_after = await check_rate_limit(user_id=user_id)
 
@@ -42,8 +52,9 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
             await save_download(user_id=user.id, link=url, db=db)
 
         task = video_procedure.delay(url, chat_id, user_id)
-        logger.info("Video task queued. task_id=%s user_id=%s chat_id=%s", task.id, user_id, chat_id)
         request_id = task.id.split("-")[0]
+        with log_context(request_id=request_id):
+            logger.info("Video task queued")
 
         await update.message.reply_text(
             f"Request received. Added to the download queue.\n\nReference: {request_id}"

@@ -198,6 +198,7 @@ For 512 MB memory plans, keep worker concurrency conservative. `--pool=solo` or 
 - Long videos are rejected by `MEMORY_SAFE_MAX_DURATION_SECONDS` to protect memory.
 - Celery task rate limiting is set in `services/worker.py`.
 - Each queued download gets a short reference id that appears in both Telegram messages and worker logs.
+- Production logs are JSON with request, platform, user, chat, quality, attempt, and duration fields where available.
 
 ## Troubleshooting
 

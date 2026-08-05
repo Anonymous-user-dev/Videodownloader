@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from services.media_probe import has_audio_stream, is_audio_file, probe_video
+from services.logging_config import log_context
 from services.tiktok_direct import download_tiktok_video_direct
 from services.tiktok_ytdlp import tiktok_extractor_args
 from services.ytdlp_cookies import get_cookie_path
@@ -274,29 +275,31 @@ def download_video(url: str, quality: int = 1080):
     quality = min(int(quality), 1080)
     unique_id = str(uuid.uuid4())[:8]
 
-    logger.info(f"Starting download | url={url} | quality={quality}")
+    logger.info("Starting download")
 
     last_error = None
     quality_ladder = build_quality_ladder(quality)
 
     for attempt, attempt_quality in enumerate(quality_ladder, start=1):
+        attempt_started_at = time.monotonic()
         try:
-            use_cookies = not (is_instagram_url(url) and attempt == 2)
-            options = base_options(url, attempt_quality, unique_id, use_cookies=use_cookies)
+            with log_context(quality=attempt_quality, attempt=attempt):
+                use_cookies = not (is_instagram_url(url) and attempt == 2)
+                options = base_options(url, attempt_quality, unique_id, use_cookies=use_cookies)
 
-            if is_youtube_url(url):
-                options["format"] = build_format(url, attempt_quality)
+                if is_youtube_url(url):
+                    options["format"] = build_format(url, attempt_quality)
 
-            if is_tiktok_url(url):
-                options["extractor_args"] = tiktok_extractor_args(attempt)
-                options["format"] = build_format(url, attempt_quality)
+                if is_tiktok_url(url):
+                    options["extractor_args"] = tiktok_extractor_args(attempt)
+                    options["format"] = build_format(url, attempt_quality)
 
-            with yt_dlp.YoutubeDL(options) as ydl:
-                logger.info("Attempt %s/%s | target_quality=%sp", attempt, len(quality_ladder), attempt_quality)
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    logger.info("Download attempt started")
 
-                info = ydl.extract_info(url, download=True)
+                    info = ydl.extract_info(url, download=True)
 
-                file_path = find_downloaded_file(info, ydl)
+                    file_path = find_downloaded_file(info, ydl)
 
                 if not file_path:
                     raise FileNotFoundError(f"Missing downloaded file for: {url}")
@@ -353,13 +356,28 @@ def download_video(url: str, quality: int = 1080):
                         f"Downloaded video is only {width}x{height} for target {attempt_quality}p"
                     )
 
-                logger.info(f"Success | file={file_path} | codec={codec} | size={width}x{height}")
+                logger.info(
+                    "Download attempt succeeded. codec=%s size=%sx%s",
+                    codec,
+                    width,
+                    height,
+                    extra={"duration_ms": round((time.monotonic() - attempt_started_at) * 1000)},
+                )
 
                 return file_path, width, height, "video"
 
         except Exception as e:
             last_error = e
-            logger.warning("Attempt %s failed for %s: %s", attempt, url, e, exc_info=True)
+            logger.warning(
+                "Download attempt failed: %s",
+                e,
+                exc_info=True,
+                extra={
+                    "attempt": attempt,
+                    "quality": attempt_quality,
+                    "duration_ms": round((time.monotonic() - attempt_started_at) * 1000),
+                },
+            )
             time.sleep(2 * attempt)
 
     error_detail = str(last_error) if last_error else "unknown error"
