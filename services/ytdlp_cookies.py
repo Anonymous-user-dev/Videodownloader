@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 from config import settings
+from services.platform_policy import get_platform_policy
 
 logger = logging.getLogger(__name__)
 
@@ -15,18 +16,6 @@ DEFAULT_INSTAGRAM_COOKIES_PATH = BASE_DIR / "instagram_cookies.txt"
 
 RUNTIME_DIR = Path("/tmp")
 INSTAGRAM_AUTH_COOKIE_NAMES = {"sessionid", "ds_user_id"}
-
-
-def is_youtube_url(url: str) -> bool:
-    return "youtube.com" in url or "youtu.be" in url
-
-
-def is_tiktok_url(url: str) -> bool:
-    return "tiktok.com" in url
-
-
-def is_instagram_url(url: str) -> bool:
-    return "instagram.com" in url
 
 
 def cookie_names_for_domain(path: Path, domain_fragment: str) -> set[str]:
@@ -129,17 +118,19 @@ def get_instagram_cookie_path() -> Path | None:
 
 
 def get_source_cookie_path(url: str) -> Path | None:
-    if is_youtube_url(url):
+    platform = get_platform_policy(url).name
+
+    if platform == "youtube":
         if settings.YOUTUBE_COOKIES_PATH:
             return Path(settings.YOUTUBE_COOKIES_PATH)
         return DEFAULT_YOUTUBE_COOKIES_PATH
 
-    if is_tiktok_url(url):
+    if platform == "tiktok":
         if settings.TIKTOK_COOKIES_PATH:
             return Path(settings.TIKTOK_COOKIES_PATH)
         return DEFAULT_TIKTOK_COOKIES_PATH
 
-    if is_instagram_url(url):
+    if platform == "instagram":
         return get_instagram_cookie_path()
 
     if settings.YTDLP_COOKIES_PATH:

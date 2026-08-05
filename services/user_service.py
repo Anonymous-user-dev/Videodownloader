@@ -1,11 +1,10 @@
-from urllib.parse import urlparse
-
 import logging
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from model import User, Download
+from services.platform_policy import get_platform_policy
 
 logger = logging.getLogger(__name__)
 
@@ -15,16 +14,8 @@ def normalize_username(username, telegram_user_id):
 
 
 def detect_link_type(link: str) -> str | None:
-    host = urlparse(link).netloc.lower()
-
-    if "tiktok.com" in host:
-        return "tiktok"
-    if "instagram.com" in host:
-        return "instagram"
-    if "youtube.com" in host or "youtu.be" in host:
-        return "youtube"
-
-    return None
+    platform = get_platform_policy(link).name
+    return None if platform == "unknown" else platform
 
 
 async def get_or_create_user(telegram_user_id, username, db):

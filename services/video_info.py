@@ -1,8 +1,7 @@
 import logging
 import validators
 import yt_dlp
-from urllib.parse import urlsplit, urlunsplit
-from services.tiktok_ytdlp import tiktok_extractor_args
+from services.platform_policy import get_platform_policy
 from services.ytdlp_cookies import get_cookie_path
 
 logger = logging.getLogger(__name__)
@@ -21,28 +20,9 @@ class YtdlpLogBridge:
         logger.error("yt-dlp: %s", message)
 
 
-def is_youtube_url(url: str) -> bool:
-    return "youtube.com" in url or "youtu.be" in url
-
-
-def is_tiktok_url(url: str) -> bool:
-    return "tiktok.com" in url
-
-
-def is_instagram_url(url: str) -> bool:
-    return "instagram.com" in url
-
-
-def normalize_url(url: str) -> str:
-    if is_instagram_url(url):
-        parsed = urlsplit(url)
-        path = parsed.path.rstrip("/") + "/"
-        return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
-    return url
-
-
 def get_video_info(url: str):
-    url = normalize_url(url)
+    policy = get_platform_policy(url)
+    url = policy.normalize_url(url)
 
     options = {
         "quiet": True,
@@ -66,39 +46,7 @@ def get_video_info(url: str):
     else:
         logger.warning("No yt-dlp cookies found for video info")
 
-    if is_youtube_url(url):
-        options["http_headers"] = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-    if is_tiktok_url(url):
-        options["extractor_args"] = tiktok_extractor_args()
-        options["http_headers"] = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            "Referer": "https://www.tiktok.com/",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-
-    if is_instagram_url(url):
-        options["http_headers"] = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            "Referer": "https://www.instagram.com/",
-            "Accept-Language": "en-US,en;q=0.9",
-            "X-IG-App-ID": "936619743392459",
-        }
+    options.update(policy.ytdlp_options(quality=1080, attempt=1))
 
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False, process=True)

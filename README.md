@@ -233,7 +233,8 @@ Requests appear stuck:
 - `bot.py`: Telegram application and handler registration.
 - `handlers/download.py`: fast Telegram request handling and queueing.
 - `services/worker.py`: Celery task orchestration.
-- `services/downloader.py`: yt-dlp options, format selection, download validation.
+- `services/downloader.py`: yt-dlp execution, retry orchestration, and download validation.
+- `services/platform_policy.py`: isolated YouTube, TikTok, Instagram, and generic yt-dlp behavior.
 - `services/video_info.py`: metadata extraction used by the worker.
 - `services/media_probe.py`: ffprobe helpers.
 - `services/media_policy.py`: file size, duration, and quality policy.

@@ -5,6 +5,7 @@ from services.downloader import (
     is_video_quality_too_low,
     normalize_url,
 )
+from services.platform_policy import InstagramPolicy, TikTokPolicy, YouTubePolicy, get_platform_policy
 
 
 def test_normalize_instagram_url_removes_tracking_query() -> None:
@@ -40,3 +41,26 @@ def test_platform_formats_require_video_and_audio_before_fallback() -> None:
 
     assert social_format.startswith("best*[vcodec!=none][acodec!=none]")
     assert "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]" in youtube_format
+
+
+def test_policy_selection_uses_domain_boundaries() -> None:
+    assert isinstance(get_platform_policy("https://music.youtube.com/watch?v=1"), YouTubePolicy)
+    assert isinstance(get_platform_policy("https://vt.tiktok.com/abc"), TikTokPolicy)
+    assert isinstance(get_platform_policy("https://www.instagram.com/reel/abc"), InstagramPolicy)
+    assert get_platform_policy("https://nottiktok.com/video").name == "unknown"
+
+
+def test_instagram_policy_retries_second_attempt_without_cookies() -> None:
+    policy = InstagramPolicy()
+
+    assert policy.use_cookies(1)
+    assert not policy.use_cookies(2)
+    assert policy.use_cookies(3)
+
+
+def test_tiktok_policy_rotates_extractor_configuration() -> None:
+    policy = TikTokPolicy()
+
+    first = policy.ytdlp_options(1080, 1)["extractor_args"]
+    second = policy.ytdlp_options(1080, 2)["extractor_args"]
+    assert first["tiktok"]["api_hostname"] != second["tiktok"]["api_hostname"]
