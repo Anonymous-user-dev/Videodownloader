@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Compile Python modules
+        run: python -m compileall -q -x '/(\.venv|__pycache__)/' .
+
+      - name: Verify migration graph
+        env:
+          BOT_TOKEN: test-token
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost/test
+          WEBHOOK_URL: https://example.com/webhook/telegram
+          WEBHOOK_SECRET: test-secret
+          REDIS_HOST: redis://localhost:6379/15
+          RABBITMQ_HOST: memory://
+        run: alembic heads
+
+      - name: Run tests
+        run: pytest -q

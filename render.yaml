@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+
+services:
+  - type: keyvalue
+    name: videodownloader-redis
+    plan: starter
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: "off"
+
+  - type: web
+    name: videodownloader-service
+    runtime: python
+    plan: starter
+    numInstances: 1
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      ffmpeg -version &&
+      ffprobe -version &&
+      node --version
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 60
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: DB_POOL_SIZE
+        value: 5
+      - key: DB_MAX_OVERFLOW
+        value: 5
+      - key: DATABASE_URL
+        fromDatabase:
+          name: videodownloader-db
+          property: connectionString
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: videodownloader-redis
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: YOUTUBE_COOKIES_PATH
+        value: /etc/secrets/youtube_cookies.txt
+      - key: TIKTOK_COOKIES_PATH
+        value: /etc/secrets/tiktok_cookies.txt
+      - key: INSTAGRAM_COOKIES_PATH
+        value: /etc/secrets/instagram_cookies.txt
+      - key: YTDLP_COOKIES_PATH
+        value: /etc/secrets/cookies.txt
+
+  - type: worker
+    name: videodownloader-worker
+    runtime: python
+    plan: starter
+    numInstances: 1
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      ffmpeg -version &&
+      ffprobe -version &&
+      node --version
+    startCommand: celery -A services.worker.app worker --loglevel=info --pool=solo --concurrency=1
+    maxShutdownDelaySeconds: 300
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.11
+      - key: DB_POOL_SIZE
+        value: 2
+      - key: DB_MAX_OVERFLOW
+        value: 1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: videodownloader-db
+          property: connectionString
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: videodownloader-redis
+          property: connectionString
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: YOUTUBE_COOKIES_PATH
+        value: /etc/secrets/youtube_cookies.txt
+      - key: TIKTOK_COOKIES_PATH
+        value: /etc/secrets/tiktok_cookies.txt
+      - key: INSTAGRAM_COOKIES_PATH
+        value: /etc/secrets/instagram_cookies.txt
+      - key: YTDLP_COOKIES_PATH
+        value: /etc/secrets/cookies.txt
+
+databases:
+  - name: videodownloader-db
+    plan: basic-256mb
+    postgresMajorVersion: "18"
+    databaseName: videodownloader
+    user: videodownloader
+    ipAllowList: []

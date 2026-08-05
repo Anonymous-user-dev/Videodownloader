@@ -1,4 +1,5 @@
 import re
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +25,13 @@ class Settings(BaseSettings):
 
     LIMIT: int = 5
     WINDOW_SEC: int = 60
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return value
 
     @field_validator("WEBHOOK_SECRET")
     @classmethod

@@ -168,27 +168,31 @@ The tests do not contact Telegram or supported media platforms.
 
 ## Render Deployment
 
-Typical web service command:
+The repository includes `render.yaml` for a Web Service, a separately scalable Background Worker, PostgreSQL, and Render Key Value. It also includes GitHub Actions tests; Render deploys only after those checks pass.
+
+For a new environment, create a Render Blueprint from this repository. During initial creation, Render prompts for the variables marked `sync: false`:
+
+- `BOT_TOKEN`: the same Telegram bot token on both services.
+- `WEBHOOK_URL`: `https://<web-service-host>/webhook/telegram`.
+- `WEBHOOK_SECRET`: the same random value on both services, using only letters, numbers, `_`, or `-`.
+- `RABBITMQ_HOST`: the same AMQP URL on both services.
+
+The web pre-deploy command runs migrations automatically:
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port $PORT
+alembic upgrade head
 ```
 
-Typical worker command:
+For the existing production environment, do not create a second database blindly. Either adopt resources with the names in `render.yaml`, or keep the existing database/Redis services and set `DATABASE_URL` and `REDIS_HOST` manually in both services. Before deploying the job-status code, run `alembic upgrade head` once if the service is not managed by this Blueprint.
 
-```bash
-celery -A services.worker worker --loglevel=info --pool=solo
-```
+Cookie files remain Render Secret Files and are not stored in Git. Mount them at the paths declared in `render.yaml`:
 
-Recommended services:
+- `/etc/secrets/youtube_cookies.txt`
+- `/etc/secrets/tiktok_cookies.txt`
+- `/etc/secrets/instagram_cookies.txt`
+- `/etc/secrets/cookies.txt` as the generic fallback
 
-- One Render Web Service for FastAPI.
-- One Render Background Worker for Celery.
-- Managed PostgreSQL.
-- Managed Redis.
-- RabbitMQ provider such as CloudAMQP.
-
-For 512 MB memory plans, keep worker concurrency conservative. `--pool=solo` or concurrency `1` is safest for media downloads.
+The worker is intentionally `--pool=solo --concurrency=1` on a 512 MB Starter instance. Scale by increasing worker instances after monitoring memory, rather than increasing per-instance concurrency.
 
 ## Operational Notes
 
