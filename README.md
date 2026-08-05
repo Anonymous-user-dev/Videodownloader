@@ -155,6 +155,17 @@ uvicorn main:app --host 0.0.0.0 --port 10000
 
 For a local Telegram webhook test, expose the app with a tunnel and set `WEBHOOK_URL` to the public tunnel URL plus `/webhook/telegram`.
 
+### Tests
+
+Install the development dependencies and run the deterministic test suite:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The tests do not contact Telegram or supported media platforms.
+
 ## Render Deployment
 
 Typical web service command:
