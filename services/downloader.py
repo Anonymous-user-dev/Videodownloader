@@ -5,6 +5,14 @@ import logging
 import time
 from pathlib import Path
 from services.media_probe import has_audio_stream, is_audio_file, probe_video
+from services.errors import (
+    DownloadFailedError,
+    MissingDownloadedFileError,
+    NoAudioStreamError,
+    NoVideoStreamError,
+    QualityTooLowError,
+    classify_download_error,
+)
 from services.logging_config import log_context
 from services.platform_policy import (
     build_format,
@@ -24,10 +32,6 @@ logger = logging.getLogger(__name__)
 
 DOWNLOAD_DIR = Path(os.getcwd()) / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-
-class DownloadFailedError(RuntimeError):
-    pass
 
 
 class YtdlpLogBridge:
@@ -182,7 +186,7 @@ def download_video(url: str, quality: int = 1080):
                     file_path = find_downloaded_file(info, ydl)
 
                 if not file_path:
-                    raise FileNotFoundError(f"Missing downloaded file for: {url}")
+                    raise MissingDownloadedFileError("yt-dlp reported success without an output file")
 
                 has_video, probed_width, probed_height, codec = probe_video(file_path)
                 if not has_video:
@@ -196,7 +200,7 @@ def download_video(url: str, quality: int = 1080):
                                         Path(video_path).unlink(missing_ok=True)
                                     except Exception as cleanup_exc:
                                         logger.warning("Could not clean low-quality TikTok direct file %s: %s", video_path, cleanup_exc)
-                                    raise RuntimeError(
+                                    raise QualityTooLowError(
                                         f"TikTok direct fallback is only {width}x{height} for target {attempt_quality}p"
                                     )
 
@@ -211,18 +215,18 @@ def download_video(url: str, quality: int = 1080):
                                 Path(file_path).unlink(missing_ok=True)
                             except Exception as cleanup_exc:
                                 logger.warning("Could not clean audio-only video-platform file %s: %s", file_path, cleanup_exc)
-                            raise RuntimeError(f"Audio-only download selected for video URL: {url}")
+                            raise NoVideoStreamError("Audio-only media selected for a video platform URL")
 
                         logger.info("Downloaded audio-only media: %s", file_path)
                         return file_path, 0, 0, "audio"
-                    raise RuntimeError(f"Downloaded file has no video stream: {file_path}")
+                    raise NoVideoStreamError("Downloaded output has no video stream")
 
                 if policy.requires_video_and_audio and not has_audio_stream(file_path):
                     try:
                         Path(file_path).unlink(missing_ok=True)
                     except Exception as cleanup_exc:
                         logger.warning("Could not clean muted video-platform file %s: %s", file_path, cleanup_exc)
-                    raise RuntimeError(f"Downloaded video has no audio stream: {url}")
+                    raise NoAudioStreamError("Downloaded video has no audio stream")
 
                 width = info.get("width") or probed_width
                 height = info.get("height") or probed_height
@@ -234,7 +238,7 @@ def download_video(url: str, quality: int = 1080):
                         Path(file_path).unlink(missing_ok=True)
                     except Exception as cleanup_exc:
                         logger.warning("Could not clean low-quality file %s: %s", file_path, cleanup_exc)
-                    raise RuntimeError(
+                    raise QualityTooLowError(
                         f"Downloaded video is only {width}x{height} for target {attempt_quality}p"
                     )
 
@@ -265,4 +269,7 @@ def download_video(url: str, quality: int = 1080):
     error_detail = str(last_error) if last_error else "unknown error"
     exc_info = (type(last_error), last_error, last_error.__traceback__) if last_error else None
     logger.error("All attempts failed | url=%s | error=%s", url, error_detail, exc_info=exc_info)
-    raise DownloadFailedError(f"Download failed for {url}: {error_detail}") from last_error
+    classified_error = classify_download_error(last_error)
+    if classified_error is last_error:
+        raise classified_error
+    raise classified_error from last_error

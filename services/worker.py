@@ -6,6 +6,13 @@ import time
 
 from config import settings
 from services.downloader import download_video
+from services.errors import (
+    DownloadFailedError,
+    DurationLimitError,
+    FileTooLargeError,
+    MissingDownloadedFileError,
+    OperationalDownloadError,
+)
 from services.media_policy import (
     MAX_TELEGRAM_FILE_SIZE,
     MEMORY_SAFE_QUALITY,
@@ -80,11 +87,7 @@ def short_request_id(request_id: str | None) -> str:
 
 
 def download_failure_message(request_id: str) -> str:
-    return (
-        "Download failed. This link may be private, unavailable, too large, "
-        "or temporarily blocked by the platform.\n\n"
-        f"Reference: {request_id}"
-    )
+    return DownloadFailedError().user_message(request_id)
 
 
 def send_download_started_message(chat_id: int, file_size: int | None) -> None:
@@ -112,7 +115,7 @@ def download_and_validate(url: str, quality: int):
     file_path, width, height, media_type = download_video(url, quality)
 
     if not file_path or not os.path.exists(file_path):
-        raise Exception("Download failed - file not found")
+        raise MissingDownloadedFileError("Downloader returned a missing output path")
 
     size = os.path.getsize(file_path)
 
@@ -141,19 +144,16 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
 
             if video_info:
                 if is_too_long_for_worker(video_info):
+                    failure = DurationLimitError()
                     logger.info(
                         "Video rejected because it is too long. duration=%s",
                         video_info.get("duration"),
                     )
-                    safe_send_message(
-                        chat_id,
-                        "This video is too long for the current server limit.\n\n"
-                        "Please send a video around 2 minutes or shorter.",
-                    )
+                    safe_send_message(chat_id, failure.user_message(request_id))
                     update_job_status(
                         getattr(self.request, "id", ""),
                         FAILED,
-                        "duration_limit",
+                        failure.code,
                     )
                     return
 
@@ -221,15 +221,12 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                     remove_file(file_path)
                     file_path = None
                 else:
-                    safe_send_message(
-                        chat_id,
-                        f"Video is still too large ({size_mb:.1f}MB) even at 480p.\n\n"
-                        "Telegram allows a limited file size. Please try a shorter video.",
-                    )
+                    failure = FileTooLargeError(f"Final output size was {size_mb:.1f}MB")
+                    safe_send_message(chat_id, failure.user_message(request_id))
                     update_job_status(
                         getattr(self.request, "id", ""),
                         FAILED,
-                        "file_too_large",
+                        failure.code,
                     )
                     return
 
@@ -250,12 +247,22 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
 
             update_job_status(getattr(self.request, "id", ""), SENT)
 
-        except Exception:
-            logger.exception("Worker failed")
+        except OperationalDownloadError as exc:
+            logger.exception("Worker failed with operational error. error_code=%s", exc.code)
             update_job_status(
                 getattr(self.request, "id", ""),
                 FAILED,
-                "download_failed",
+                exc.code,
+            )
+
+            safe_send_message(chat_id, exc.user_message(request_id))
+
+        except Exception:
+            logger.exception("Worker failed with unexpected error")
+            update_job_status(
+                getattr(self.request, "id", ""),
+                FAILED,
+                DownloadFailedError.code,
             )
 
             safe_send_message(chat_id, download_failure_message(request_id))

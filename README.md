@@ -238,6 +238,7 @@ Requests appear stuck:
 - `services/video_info.py`: metadata extraction used by the worker.
 - `services/media_probe.py`: ffprobe helpers.
 - `services/media_policy.py`: file size, duration, and quality policy.
+- `services/errors.py`: typed internal failures, stable error codes, and safe user messages.
 - `services/ytdlp_cookies.py`: platform-specific cookie selection and diagnostics.
 - `services/telegram_sender.py`: synchronous Telegram API upload helpers.
 - `services/rate_limit.py`: Redis token bucket.
