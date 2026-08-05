@@ -1,10 +1,31 @@
+from urllib.parse import urlparse
+
+import logging
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
+
 from model import User, Download
-import logging
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_username(username, telegram_user_id):
+    return username or f"user_{telegram_user_id}"
+
+
+def detect_link_type(link: str) -> str | None:
+    host = urlparse(link).netloc.lower()
+
+    if "tiktok.com" in host:
+        return "tiktok"
+    if "instagram.com" in host:
+        return "instagram"
+    if "youtube.com" in host or "youtu.be" in host:
+        return "youtube"
+
+    return None
+
 
 async def get_or_create_user(telegram_user_id, username, db):
     """Gets user from database if user already exists, if not, it registers user in DB"""
@@ -16,7 +37,7 @@ async def get_or_create_user(telegram_user_id, username, db):
     try:
         new_user = User(
             telegram_user_id=telegram_user_id,
-            username=username,
+            username=normalize_username(username, telegram_user_id),
         )
         db.add(new_user)
         await db.commit()
@@ -35,13 +56,7 @@ async def save_download(user_id, link, db):
         link=link,
     )
     logger.info("Saving download record to DB")
-    if "tiktok" in link:
-        download_ob.link_type = "tiktok"
-    if "instagram" in link:
-        download_ob.link_type = "instagram"
-    elif "youtube" in link:
-        download_ob.link_type = "youtube"
-    # Add link type record to db
+    download_ob.link_type = detect_link_type(link)
 
     db.add(download_ob)
 
