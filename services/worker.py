@@ -16,6 +16,7 @@ from services.media_policy import (
     should_lower_quality_for_size,
 )
 from services.logging_config import configure_logging, log_context, platform_from_url
+from services.job_status import DOWNLOADING, FAILED, SENT, STARTED, UPLOADING, update_job_status
 from services.telegram_sender import send_audio_sync, send_message_sync, send_video_sync
 from services.video_info import get_video_info
 
@@ -131,6 +132,7 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
         quality=quality,
     ):
         logger.info("Worker started")
+        update_job_status(getattr(self.request, "id", ""), STARTED)
         file_path = None
 
         try:
@@ -148,6 +150,11 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                         "This video is too long for the current server limit.\n\n"
                         "Please send a video around 2 minutes or shorter.",
                     )
+                    update_job_status(
+                        getattr(self.request, "id", ""),
+                        FAILED,
+                        "duration_limit",
+                    )
                     return
 
                 info_size = get_known_file_size(video_info)
@@ -162,6 +169,7 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
             quality = choose_quality(quality, video_info)
             send_download_started_message(chat_id, info_size)
 
+            update_job_status(getattr(self.request, "id", ""), DOWNLOADING)
             file_path, width, height, media_type, size = download_and_validate(url, quality)
             size_mb = size / (1024 * 1024)
 
@@ -218,8 +226,14 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                         f"Video is still too large ({size_mb:.1f}MB) even at 480p.\n\n"
                         "Telegram allows a limited file size. Please try a shorter video.",
                     )
+                    update_job_status(
+                        getattr(self.request, "id", ""),
+                        FAILED,
+                        "file_too_large",
+                    )
                     return
 
+            update_job_status(getattr(self.request, "id", ""), UPLOADING)
             if media_type == "audio":
                 logger.info("Sending audio. size=%.2fMB", size_mb)
                 send_audio_sync(chat_id, file_path)
@@ -234,8 +248,15 @@ def video_procedure(self, url, chat_id, user_id, quality=1080):
                 send_video_sync(chat_id, file_path, width, height)
                 logger.info("Video sent successfully")
 
+            update_job_status(getattr(self.request, "id", ""), SENT)
+
         except Exception:
             logger.exception("Worker failed")
+            update_job_status(
+                getattr(self.request, "id", ""),
+                FAILED,
+                "download_failed",
+            )
 
             safe_send_message(chat_id, download_failure_message(request_id))
 

@@ -1,7 +1,9 @@
 from telegram import Update
 from telegram.ext import ContextTypes
+from uuid import uuid4
+
 from database import SessionLocal
-from services.user_service import get_or_create_user, save_download
+from services.user_service import get_or_create_user, mark_download_failed, save_download
 from dependencies.redis import redis_client
 from services.worker import video_procedure
 from services.rate_limit import check_rate_limit
@@ -10,6 +12,42 @@ import logging
 from services.logging_config import log_context, platform_from_url
 
 logger = logging.getLogger(__name__)
+
+
+async def queue_download_job(
+    url: str,
+    chat_id: int,
+    telegram_user_id: int,
+    username: str | None,
+    quality: int = 1080,
+) -> str:
+    task_id = str(uuid4())
+
+    async with SessionLocal() as db:
+        user = await get_or_create_user(
+            telegram_user_id=telegram_user_id,
+            username=username,
+            db=db,
+        )
+        await save_download(
+            user_id=user.id,
+            link=url,
+            request_id=task_id,
+            requested_quality=quality,
+            db=db,
+        )
+
+    try:
+        video_procedure.apply_async(
+            args=(url, chat_id, telegram_user_id, quality),
+            task_id=task_id,
+        )
+    except Exception:
+        async with SessionLocal() as db:
+            await mark_download_failed(task_id, "queue_failed", db)
+        raise
+
+    return task_id
 
 
 async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -43,16 +81,13 @@ async def _queue_video_request(update: Update, url: str, chat_id: int, user_id: 
         return
 
     try:
-        async with SessionLocal() as db:
-            user = await get_or_create_user(
-                telegram_user_id=user_id,
-                username=update.effective_user.username,
-                db=db,
-            )
-            await save_download(user_id=user.id, link=url, db=db)
-
-        task = video_procedure.delay(url, chat_id, user_id)
-        request_id = task.id.split("-")[0]
+        task_id = await queue_download_job(
+            url=url,
+            chat_id=chat_id,
+            telegram_user_id=user_id,
+            username=update.effective_user.username,
+        )
+        request_id = task_id.split("-")[0]
         with log_context(request_id=request_id):
             logger.info("Video task queued")
 
@@ -136,23 +171,22 @@ async def handle_quality_callback(update: Update, context: ContextTypes.DEFAULT_
 
         await redis_client.delete(pending_key)
 
-        async with SessionLocal() as db:
-            user = await get_or_create_user(
-                telegram_user_id=user_id,
-                username=update.effective_user.username,
-                db=db,
-            )
-            await save_download(user_id=user.id, link=original_url, db=db)
-
-        task = video_procedure.delay(original_url, chat_id, user_id, quality)
-        logger.info(
-            "Video task queued. task_id=%s quality=%s user_id=%s chat_id=%s",
-            task.id,
-            quality,
-            user_id,
-            chat_id,
+        task_id = await queue_download_job(
+            url=original_url,
+            chat_id=chat_id,
+            telegram_user_id=user_id,
+            username=update.effective_user.username,
+            quality=quality,
         )
-        request_id = task.id.split("-")[0]
+        request_id = task_id.split("-")[0]
+        with log_context(
+            request_id=request_id,
+            platform=platform_from_url(original_url),
+            user_id=user_id,
+            chat_id=chat_id,
+            quality=quality,
+        ):
+            logger.info("Video task queued")
 
         await query.edit_message_text(
             f"Download queued in {quality}p quality.\n\nReference: {request_id}"

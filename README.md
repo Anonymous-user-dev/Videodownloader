@@ -199,6 +199,7 @@ For 512 MB memory plans, keep worker concurrency conservative. `--pool=solo` or 
 - Celery task rate limiting is set in `services/worker.py`.
 - Each queued download gets a short reference id that appears in both Telegram messages and worker logs.
 - Production logs are JSON with request, platform, user, chat, quality, attempt, and duration fields where available.
+- PostgreSQL tracks each request through `queued`, `started`, `downloading`, `uploading`, and terminal `sent` or `failed` states.
 
 ## Troubleshooting
 
